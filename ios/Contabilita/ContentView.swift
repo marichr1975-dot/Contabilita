@@ -1,4 +1,5 @@
 import SwiftUI
+import PDFKit
 
 struct Lavorazione: Identifiable, Codable {
     let id: UUID
@@ -209,6 +210,7 @@ struct ContentView: View {
 struct PDFImportatiView: View {
     @Environment(\.presentationMode) private var presentationMode
     @State private var files: [URL] = []
+    @State private var pdfDaMostrare: URL? = nil
 
     var body: some View {
         NavigationView {
@@ -231,14 +233,20 @@ struct PDFImportatiView: View {
                         .padding(.top, 8)
 
                     List(files, id: \.self) { file in
-                        HStack(spacing: 12) {
-                            Image(systemName: "doc.fill")
-                                .foregroundColor(.teal)
-                            Text(file.lastPathComponent)
-                                .font(.body)
-                                .lineLimit(2)
+                        Button(action: { pdfDaMostrare = file }) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "doc.fill")
+                                    .foregroundColor(.teal)
+                                Text(file.lastPathComponent)
+                                    .font(.body)
+                                    .lineLimit(2)
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 8)
                         }
-                        .padding(.vertical, 8)
                     }
                     .listStyle(.plain)
                 }
@@ -252,6 +260,9 @@ struct PDFImportatiView: View {
                 }
             }
             .onAppear { caricaFiles() }
+            .sheet(item: $pdfDaMostrare) { file in
+                PDFViewer(url: file)
+            }
         }
     }
 
@@ -268,6 +279,44 @@ struct PDFImportatiView: View {
             includingPropertiesForKeys: nil
         )) ?? []).filter { $0.pathExtension.lowercased() == "pdf" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+}
+
+
+struct PDFViewer: View {
+    let url: URL
+    @Environment(\.presentationMode) private var presentationMode
+
+    var body: some View {
+        NavigationView {
+            PDFKitView(url: url)
+                .navigationTitle(url.lastPathComponent)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
+                    }
+                }
+        }
+    }
+}
+
+struct PDFKitView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.displayMode = .singlePageContinuous
+        view.backgroundColor = .systemBackground
+        view.document = PDFDocument(url: url)
+        return view
+    }
+
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        if uiView.document?.documentURL != url {
+            uiView.document = PDFDocument(url: url)
+        }
     }
 }
 
