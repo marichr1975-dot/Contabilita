@@ -526,9 +526,9 @@ struct SelezionaDataModificaView: View {
     }
 
     private func apri(_ bolletta: Bolletta) {
-        let view = ModificaBollettaView(archivio: archivio, bolletta: bolletta) {
+        let view = ModificaBollettaView(archivio: archivio, bolletta: bolletta, onDeleted: {
             bolletteTrovate.removeAll { $0.id == bolletta.id }
-        }
+        })
         let host = UIHostingController(rootView: view)
         host.modalPresentationStyle = .pageSheet
 
@@ -559,9 +559,10 @@ struct ModificaBollettaView: View {
     @State private var mostraConfermaCancella = false
     @FocusState private var rigaAttiva: Int?
 
-    init(archivio: Archivio, bolletta: Bolletta) {
+    init(archivio: Archivio, bolletta: Bolletta, onDeleted: (() -> Void)? = nil) {
         self.archivio = archivio
         self.bolletta = bolletta
+        self.onDeleted = onDeleted
         _data = State(initialValue: bolletta.data)
         _lavorazioni = State(initialValue: bolletta.lavorazioni)
     }
