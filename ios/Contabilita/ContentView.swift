@@ -94,7 +94,7 @@ struct ContentView: View {
     @StateObject private var archivio = Archivio()
     @State private var nuovaBolletta = false
     @State private var modificaBolletta = false
-    @State private var mostraCaricaProspetto = false
+    @State private var mostraDatiAnalizzati = false
 
     var body: some View {
         NavigationView {
@@ -131,9 +131,9 @@ struct ContentView: View {
                 .buttonStyle(.bordered)
 
                 Button {
-                    mostraCaricaProspetto = true
+                    mostraDatiAnalizzati = true
                 } label: {
-                    Text("CARICA PROSPETTO")
+                    Text("DATI ANALIZZATI")
                         .font(.title2)
                         .bold()
                         .frame(maxWidth: .infinity)
@@ -155,8 +155,8 @@ struct ContentView: View {
                     NessunaBollettaView()
                 }
             }
-            .sheet(isPresented: $mostraCaricaProspetto) {
-                CaricaProspettoView()
+            .sheet(isPresented: $mostraDatiAnalizzati) {
+                DatiAnalizzatiView(archivio: archivio)
             }
         }
     }
@@ -403,38 +403,136 @@ struct NessunaBollettaView: View {
     }
 }
 
-struct CaricaProspettoView: View {
+struct DatiAnalizzatiView: View {
+    @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
+
+    // Per ora vengono mostrate le date che hanno bollette salvate.
+    // La lettura del prospetto aziendale e il calcolo delle incongruenze
+    // verranno collegati alla condivisione/importazione del PDF nel prossimo passaggio.
+    private var dateDisponibili: [Bolletta] {
+        archivio.bollette.sorted { $0.data > $1.data }
+    }
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 24) {
-                Image(systemName: "tablecells")
-                    .font(.system(size: 55))
-
-                Text("CARICA PROSPETTO")
-                    .font(.title2)
-                    .bold()
-
-                Text("Qui verrà caricata la tabella Excel ricevuta dall'azienda.")
-                    .font(.title3)
-                    .multilineTextAlignment(.center)
-
-                Button("Scegli file Excel") {
-                    // Collegamento all'importazione Excel nel prossimo passaggio.
+            VStack(spacing: 0) {
+                HStack {
+                    Text("INCONGRUENZE")
+                        .font(.title2)
+                        .bold()
+                    Spacer()
                 }
-                .font(.title3)
-                .buttonStyle(.borderedProminent)
+                .padding(18)
 
-                Spacer()
+                if dateDisponibili.isEmpty {
+                    Spacer()
+                    Text("Nessuna bolletta analizzata.")
+                        .font(.title3)
+                    Text("Quando arriverà il prospetto dell'azienda, qui saranno indicate le date con differenze.")
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 30)
+                    Spacer()
+                } else {
+                    List {
+                        Section(header: Text("DATE DA CONTROLLARE")) {
+                            ForEach(dateDisponibili) { bolletta in
+                                NavigationLink {
+                                    ConfrontoBollettaView(bolletta: bolletta)
+                                } label: {
+                                    HStack {
+                                        Text(bolletta.data.formatted(date: .numeric, time: .omitted))
+                                            .font(.title3)
+                                        Spacer()
+                                        Image(systemName: "exclamationmark.triangle")
+                                    }
+                                    .padding(.vertical, 8)
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            .padding(30)
-            .navigationTitle("Prospetto")
+            .navigationTitle("Dati analizzati")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
+                    Button("Chiudi") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
                 }
             }
         }
     }
 }
+
+struct ConfrontoBollettaView: View {
+    let bolletta: Bolletta
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text("CONFRONTO")
+                .font(.title2)
+                .bold()
+                .padding(.top, 12)
+
+            Text(bolletta.data.formatted(date: .numeric, time: .omitted))
+                .font(.headline)
+                .padding(.bottom, 12)
+
+            HStack(spacing: 0) {
+                Text("CARICATI")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(10)
+                    .background(Color.gray.opacity(0.15))
+
+                Text("AZIENDA")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(10)
+                    .background(Color.gray.opacity(0.15))
+
+                Text("DIFFERENZA")
+                    .font(.headline)
+                    .frame(width: 105)
+                    .padding(10)
+                    .background(Color.gray.opacity(0.15))
+            }
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(bolletta.lavorazioni) { lavorazione in
+                        let caricato = Int(lavorazione.quantita) ?? 0
+
+                        HStack(spacing: 0) {
+                            Text(lavorazione.nome)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Text("\(caricato)")
+                                .frame(maxWidth: .infinity)
+
+                            Text("—")
+                                .frame(width: 105)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 12)
+
+                        Divider()
+                    }
+                }
+            }
+
+            Text("Il confronto con i dati dell'azienda sarà compilato automaticamente quando verrà importato il prospetto.")
+                .font(.footnote)
+                .multilineTextAlignment(.center)
+                .padding(12)
+        }
+        .navigationTitle("Differenze")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
