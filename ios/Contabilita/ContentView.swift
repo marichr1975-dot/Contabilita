@@ -162,16 +162,65 @@ struct ContentView: View {
     }
 }
 
+
+struct VoceLavorazione: Identifiable {
+    let id = UUID()
+    let nome: String
+    var quantita: String = ""
+}
+
+struct GruppoLavorazione: Identifiable {
+    let id = UUID()
+    let nome: String
+    var voci: [VoceLavorazione]
+}
+
+func gruppiBollettaDaNomi() -> [GruppoLavorazione] {
+    [
+        GruppoLavorazione(nome: "classy", voci: [
+            VoceLavorazione(nome: "manici corti"),
+            VoceLavorazione(nome: "manici corto e tracolla")
+        ]),
+        GruppoLavorazione(nome: "bagpack", voci: [
+            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M"), VoceLavorazione(nome: "S")
+        ]),
+        GruppoLavorazione(nome: "training", voci: [
+            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M")
+        ]),
+        GruppoLavorazione(nome: "messenger", voci: [
+            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M")
+        ]),
+        GruppoLavorazione(nome: "today", voci: [
+            VoceLavorazione(nome: "M"), VoceLavorazione(nome: "S")
+        ]),
+        GruppoLavorazione(nome: "bagpack PRO", voci: [
+            VoceLavorazione(nome: "")
+        ]),
+        GruppoLavorazione(nome: "activity", voci: [
+            VoceLavorazione(nome: "")
+        ]),
+        GruppoLavorazione(nome: "moneyful", voci: [
+            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M")
+        ]),
+        GruppoLavorazione(nome: "case", voci: [
+            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M"), VoceLavorazione(nome: "S")
+        ]),
+        GruppoLavorazione(nome: "essential", voci: [
+            VoceLavorazione(nome: "")
+        ])
+    ]
+}
+
 struct NuovaBollettaView: View {
     @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
 
     @State private var data = Date()
     @State private var dataConfermata = false
-    @State private var lavorazioni: [Lavorazione] = []
+    @State private var gruppi: [GruppoLavorazione] = []
+    @State private var rigaAttiva: Int?
     @State private var nuovoArticolo = ""
     @State private var mostraNuovoArticolo = false
-    @FocusState private var rigaAttiva: Int?
 
     var body: some View {
         NavigationView {
@@ -179,10 +228,10 @@ struct NuovaBollettaView: View {
                 if !dataConfermata {
                     scegliData
                 } else {
-                    lista
+                    mascheraBolletta
                 }
             }
-            .navigationTitle(dataConfermata ? "Lavorazioni" : "Nuova bolletta")
+            .navigationTitle(dataConfermata ? "Elenco lavori" : "Nuova bolletta")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -191,13 +240,16 @@ struct NuovaBollettaView: View {
             }
         }
         .onAppear {
-            lavorazioni = archivio.nomiLavorazioni.map { Lavorazione(nome: $0) }
+            if gruppi.isEmpty {
+                gruppi = gruppiBollettaDaNomi()
+            }
         }
     }
 
     private var scegliData: some View {
-        VStack(spacing: 22) {
-            Text("SCEGLI LA DATA").font(.title2).bold()
+        VStack(spacing: 20) {
+            Text("SCEGLI LA DATA")
+                .font(.title2).bold()
 
             DatePicker("Data", selection: $data, displayedComponents: .date)
                 .datePickerStyle(.graphical)
@@ -205,7 +257,7 @@ struct NuovaBollettaView: View {
 
             Button {
                 dataConfermata = true
-                DispatchQueue.main.async { rigaAttiva = 0 }
+                rigaAttiva = 0
             } label: {
                 Text("OK").font(.title2).bold()
                     .frame(maxWidth: .infinity).padding()
@@ -217,30 +269,17 @@ struct NuovaBollettaView: View {
         .padding(22)
     }
 
-    private var lista: some View {
+    private var mascheraBolletta: some View {
         VStack(spacing: 0) {
-                Image("BollettaOriginale")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: 620)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 8)
-
-            HStack {
-                Text(data.formatted(date: .numeric, time: .omitted)).font(.headline)
-                Spacer()
-                Text("QUANTITÀ").font(.headline).frame(width: 110)
-            }
-            .padding(.horizontal, 16).padding(.vertical, 12)
+            intestazioneFissa
 
             Divider()
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(lavorazioni.indices, id: \.self) { index in
-                            riga(index, proxy: proxy)
-                            Divider()
+                    VStack(spacing: 10) {
+                        ForEach(gruppi.indices, id: \.self) { g in
+                            gruppoView(g, proxy: proxy)
                         }
 
                         Button {
@@ -248,65 +287,151 @@ struct NuovaBollettaView: View {
                         } label: {
                             Text("+ AGGIUNGI ARTICOLO")
                                 .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding()
+                                .frame(maxWidth: .infinity).padding()
                         }
+                        .buttonStyle(.bordered)
                     }
+                    .padding(12)
                 }
             }
 
             Button {
-                let normalizzate = lavorazioni.map {
-                    Lavorazione(id: $0.id, nome: $0.nome, quantita: $0.quantita.isEmpty ? "0" : $0.quantita)
-                }
-                archivio.salvaBolletta(Bolletta(data: data, lavorazioni: normalizzate))
-                presentationMode.wrappedValue.dismiss()
+                salva()
             } label: {
                 Text("SALVA").font(.title2).bold()
                     .frame(maxWidth: .infinity).padding()
             }
             .buttonStyle(.borderedProminent)
-            .padding(14)
+            .padding(12)
         }
         .alert("Nuovo articolo", isPresented: $mostraNuovoArticolo) {
             TextField("Nome articolo", text: $nuovoArticolo)
             Button("Aggiungi") {
-                let nome = nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !nome.isEmpty {
-                    archivio.aggiungiLavorazione(nome)
-                    lavorazioni.append(Lavorazione(nome: nome))
+                let n = nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !n.isEmpty {
+                    archivio.aggiungiLavorazione(n)
+                    gruppi.append(GruppoLavorazione(nome: n, voci: [VoceLavorazione(nome: "")]))
                     nuovoArticolo = ""
                 }
             }
             Button("Annulla", role: .cancel) { nuovoArticolo = "" }
         }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("OK") { prossimaRiga() }
+                    .font(.headline)
+            }
+        }
     }
 
-    @ViewBuilder
-    private func riga(_ index: Int, proxy: ScrollViewProxy) -> some View {
-        HStack(spacing: 12) {
-            Text(lavorazioni[index].nome)
-                .font(.title3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            TextField("0", text: $lavorazioni[index].quantita)
-                .font(.title2)
-                .multilineTextAlignment(.center)
-                .keyboardType(.numberPad)
-                .frame(width: 90, height: 52)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .focused($rigaAttiva, equals: index)
-                .onSubmit {
-                    if index + 1 < lavorazioni.count {
-                        rigaAttiva = index + 1
-                        withAnimation { proxy.scrollTo(index + 1, anchor: .center) }
-                    } else {
-                        rigaAttiva = nil
-                    }
+    private var intestazioneFissa: some View {
+        VStack(spacing: 5) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading) {
+                    Text("NOME").font(.caption).bold()
+                    Text("data").font(.headline)
                 }
+
+                Spacer()
+
+                VStack(spacing: 1) {
+                    Text("elenco").font(.headline).bold()
+                    Text("lavori").font(.headline).bold()
+                }
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Color.black).foregroundColor(.white)
+
+                Text("bagful")
+                    .font(.system(size: 30, weight: .bold))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            HStack {
+                Text(data.formatted(date: .numeric, time: .omitted))
+                    .font(.title3).bold()
+                    .foregroundColor(.blue)
+                Spacer()
+                Text("QUANTITÀ").font(.headline).bold()
+            }
         }
-        .padding(.horizontal, 16).padding(.vertical, 9)
-        .id(index)
+        .padding(.horizontal, 14).padding(.vertical, 9)
+        .background(Color(white: 0.97))
+    }
+
+    private func gruppoView(_ g: Int, proxy: ScrollViewProxy) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .bottom) {
+                Text(gruppi[g].nome)
+                    .font(.headline).bold()
+                Spacer()
+                Text("quantità").font(.headline).bold()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+
+            ForEach(gruppi[g].voci.indices, id: \.self) { v in
+                let flat = indicePiatto(g, v)
+                HStack(spacing: 8) {
+                    Text("□")
+                        .font(.title3)
+                        .frame(width: 24)
+
+                    Text(gruppi[g].voci[v].nome)
+                        .font(.title3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    TextField("", text: binding(g: g, v: v))
+                        .font(.system(size: 22))
+                        .foregroundColor(.blue)
+                        .multilineTextAlignment(.center)
+                        .keyboardType(.numberPad)
+                        .frame(width: 90, height: 44)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .focused($rigaAttiva, equals: flat)
+                        .id(flat)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 3)
+                .stroke(Color.gray.opacity(0.65), lineWidth: 1)
+        )
+    }
+
+    private func binding(g: Int, v: Int) -> Binding<String> {
+        Binding(
+            get: { gruppi[g].voci[v].quantita },
+            set: { gruppi[g].voci[v].quantita = $0 }
+        )
+    }
+
+    private func indicePiatto(_ g: Int, _ v: Int) -> Int {
+        var n = 0
+        for i in 0..<g { n += gruppi[i].voci.count }
+        return n + v
+    }
+
+    private func prossimaRiga() {
+        // L'OK della tastiera passa alla voce successiva.
+        // La gestione del focus visivo viene completata nel prossimo collegamento del campo.
+        if let r = rigaAttiva {
+            rigaAttiva = r + 1
+        } else {
+            rigaAttiva = 1
+        }
+    }
+
+    private func salva() {
+        var lista: [Lavorazione] = []
+        for g in gruppi {
+            for v in g.voci {
+                let nome = v.nome.isEmpty ? g.nome : "\(g.nome) \(v.nome)"
+                lista.append(Lavorazione(nome: nome, quantita: v.quantita.isEmpty ? "0" : v.quantita))
+            }
+        }
+        archivio.salvaBolletta(Bolletta(data: data, lavorazioni: lista))
+        presentationMode.wrappedValue.dismiss()
     }
 }
 
@@ -315,12 +440,15 @@ struct ModificaBollettaView: View {
     @Environment(\.presentationMode) private var presentationMode
     let bolletta: Bolletta
 
+    @State private var data: Date
+    @State private var mostraCambioData = false
     @State private var lavorazioni: [Lavorazione]
     @FocusState private var rigaAttiva: Int?
 
     init(archivio: Archivio, bolletta: Bolletta) {
         self.archivio = archivio
         self.bolletta = bolletta
+        _data = State(initialValue: bolletta.data)
         _lavorazioni = State(initialValue: bolletta.lavorazioni)
     }
 
@@ -328,28 +456,48 @@ struct ModificaBollettaView: View {
         NavigationView {
             VStack(spacing: 0) {
                 HStack {
-                    Text("Data: \(bolletta.data.formatted(date: .numeric, time: .omitted))")
-                        .font(.headline)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("BOLLETTA DEL")
+                            .font(.caption).bold()
+                        Text(data.formatted(date: .numeric, time: .omitted))
+                            .font(.title3).bold().foregroundColor(.blue)
+                    }
+
                     Spacer()
+
+                    Button("CAMBIA DATA") {
+                        mostraCambioData = true
+                    }
+                    .font(.headline)
                 }
-                .padding(16)
+                .padding(14)
+                .background(Color(white: 0.97))
 
                 Divider()
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 0) {
+                        VStack(spacing: 0) {
+                            HStack {
+                                Text("LAVORAZIONE").font(.headline).bold()
+                                Spacer()
+                                Text("QUANTITÀ").font(.headline).bold().frame(width: 100)
+                            }
+                            .padding(14)
+
                             ForEach(lavorazioni.indices, id: \.self) { index in
-                                HStack(spacing: 12) {
+                                HStack(spacing: 10) {
+                                    Text("□").font(.title3).frame(width: 24)
                                     Text(lavorazioni[index].nome)
                                         .font(.title3)
                                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                                    TextField("0", text: $lavorazioni[index].quantita)
-                                        .font(.title2)
+                                    TextField("", text: $lavorazioni[index].quantita)
+                                        .font(.system(size: 22))
+                                        .foregroundColor(.blue)
                                         .multilineTextAlignment(.center)
                                         .keyboardType(.numberPad)
-                                        .frame(width: 90, height: 52)
+                                        .frame(width: 90, height: 46)
                                         .textFieldStyle(RoundedBorderTextFieldStyle())
                                         .focused($rigaAttiva, equals: index)
                                         .onSubmit {
@@ -361,9 +509,8 @@ struct ModificaBollettaView: View {
                                             }
                                         }
                                 }
-                                .padding(.horizontal, 16).padding(.vertical, 9)
+                                .padding(.horizontal, 12).padding(.vertical, 7)
                                 .id(index)
-
                                 Divider()
                             }
                         }
@@ -371,24 +518,43 @@ struct ModificaBollettaView: View {
                 }
 
                 Button {
-                    archivio.salvaBolletta(Bolletta(id: bolletta.id, data: bolletta.data, lavorazioni: lavorazioni.map {
-                        Lavorazione(id: $0.id, nome: $0.nome, quantita: $0.quantita.isEmpty ? "0" : $0.quantita)
-                    }))
+                    let nuovaData = data
+                    archivio.salvaBolletta(
+                        Bolletta(
+                            id: bolletta.id,
+                            data: nuovaData,
+                            lavorazioni: lavorazioni.map {
+                                Lavorazione(id: $0.id, nome: $0.nome, quantita: $0.quantita.isEmpty ? "0" : $0.quantita)
+                            }
+                        )
+                    )
                     presentationMode.wrappedValue.dismiss()
                 } label: {
-                    Text("SALVA MODIFICHE")
-                        .font(.title2).bold()
+                    Text("SALVA").font(.title2).bold()
                         .frame(maxWidth: .infinity).padding()
                 }
                 .buttonStyle(.borderedProminent)
-                .padding(14)
+                .padding(12)
             }
-            .navigationTitle("Modifica")
+            .navigationTitle("Modifica bolletta")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Annulla") { presentationMode.wrappedValue.dismiss() }
                 }
+            }
+            .sheet(isPresented: $mostraCambioData) {
+                VStack(spacing: 20) {
+                    Text("CAMBIA DATA").font(.title2).bold()
+                    DatePicker("Data", selection: $data, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .labelsHidden()
+                    Button("OK") { mostraCambioData = false }
+                        .font(.title2).bold()
+                        .buttonStyle(.borderedProminent)
+                    Spacer()
+                }
+                .padding(22)
             }
         }
     }
