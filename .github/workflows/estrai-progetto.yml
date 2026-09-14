@@ -1,53 +1,63 @@
-name: Estrai progetto ZIP
+name: Crea app iOS IPA
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - "*.zip"
-
-permissions:
-  contents: write
+      - "ios/**"
+      - ".github/workflows/crea-ipa.yml"
 
 jobs:
-  extract:
-    runs-on: ubuntu-latest
+  build-ios:
+    runs-on: macos-14
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Trova ed estrai ZIP
-        shell: bash
+      - name: Verifica progetto
+        run: |
+          echo "Controllo progetto iOS..."
+          if [ ! -d "ios" ]; then
+            echo "ERRORE: cartella ios non trovata."
+            exit 1
+          fi
+          find ios -maxdepth 2 -type f | head -50
+
+      - name: Installa CocoaPods
+        run: |
+          if [ -f "ios/Podfile" ]; then
+            cd ios
+            pod install
+          fi
+
+      - name: Compila progetto iOS
         run: |
           set -e
-          ZIP=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
-          if [ -z "$ZIP" ]; then
-            echo "Nessun ZIP trovato"
-            exit 0
-          fi
-
-          mkdir -p .extract
-          unzip -o "$ZIP" -d .extract
-
-          # Se lo ZIP contiene una sola cartella principale, ne usa il contenuto.
-          shopt -s dotglob
-          entries=(.extract/*)
-          if [ ${#entries[@]} -eq 1 ] && [ -d "${entries[0]}" ]; then
-            cp -a "${entries[0]}"/. .
+          if [ -d "ios/Contabilita.xcworkspace" ]; then
+            xcodebuild               -workspace ios/Contabilita.xcworkspace               -scheme Contabilita               -configuration Release               -sdk iphoneos               -derivedDataPath build               CODE_SIGNING_ALLOWED=NO               CODE_SIGNING_REQUIRED=NO               build
+          elif [ -d "ios/Contabilita.xcodeproj" ]; then
+            xcodebuild               -project ios/Contabilita.xcodeproj               -scheme Contabilita               -configuration Release               -sdk iphoneos               -derivedDataPath build               CODE_SIGNING_ALLOWED=NO               CODE_SIGNING_REQUIRED=NO               build
           else
-            cp -a .extract/. .
+            echo "ERRORE: progetto Contabilita.xcodeproj/.xcworkspace non trovato."
+            exit 1
           fi
 
-          rm -rf .extract "$ZIP"
-
-      - name: Commit estrazione
+      - name: Crea IPA non firmata
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "Nessuna modifica da salvare"
-          else
-            git commit -m "Estrai progetto dal pacchetto ZIP"
-            git push
+          set -e
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" -type d | head -n 1)
+          if [ -z "$APP" ]; then
+            echo "ERRORE: .app non trovata."
+            exit 1
           fi
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -r Contabilita-unsigned.ipa Payload
+          rm -rf Payload
+
+      - name: Carica IPA come artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Contabilita-IPA
+          path: Contabilita-unsigned.ipa
