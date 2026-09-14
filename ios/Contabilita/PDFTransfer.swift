@@ -72,45 +72,82 @@ private extension String {
 
 struct PDFLocaliView: View {
     @ObservedObject var store: PDFTransferStore
+    @ObservedObject var analysisStore: PDFAnalysisStore
     @Environment(\.presentationMode) private var presentationMode
-    @State private var pdfDaMostrare: URL?
+    @State private var pdfSelezionato: URL?
+    @State private var analisiInCorso = false
+    @State private var errore: String?
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 18) {
+            VStack(spacing: 16) {
                 if store.files.isEmpty {
                     Spacer()
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 48))
                         .foregroundColor(.teal)
-                    Text("Nessun PDF ricevuto")
-                        .font(.title2)
+                    Text("Nessun PDF ricevuto").font(.title2)
                     Text("Da WhatsApp o File: Condividi → Contabilità.\nPoi riapri Contabilità.")
                         .multilineTextAlignment(.center)
                         .foregroundColor(.secondary)
                     Spacer()
                 } else {
                     Text("PDF RICEVUTI")
-                        .font(.title2)
-                        .fontWeight(.semibold)
+                        .font(.title2).fontWeight(.semibold)
                         .padding(.top, 8)
 
                     List(store.files, id: \.self) { file in
-                        Button {
-                            pdfDaMostrare = file
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "doc.fill")
-                                    .foregroundColor(.teal)
-                                Text(file.lastPathComponent)
-                                    .lineLimit(2)
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Button {
+                                pdfSelezionato = file
+                                errore = nil
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "doc.fill").foregroundColor(.teal)
+                                    Text(file.lastPathComponent).lineLimit(2).foregroundColor(.primary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right").foregroundColor(.secondary)
+                                }
                             }
-                            .padding(.vertical, 8)
+
+                            if pdfSelezionato == file {
+                                Button {
+                                    analizza(file)
+                                } label: {
+                                    HStack {
+                                        Spacer()
+                                        if analisiInCorso {
+                                            ProgressView().padding(.trailing, 8)
+                                            Text("ANALISI IN CORSO...")
+                                        } else {
+                                            Image(systemName: "wand.and.stars")
+                                            Text("CARICA E ANALIZZA")
+                                        }
+                                        Spacer()
+                                    }
+                                    .font(.headline)
+                                    .padding(.vertical, 12)
+                                    .background(Color.teal.opacity(0.12))
+                                    .cornerRadius(12)
+                                }
+                                .disabled(analisiInCorso)
+
+                                if let existing = analysisStore.analisiPerFile(file) {
+                                    Button("VEDI DATI ANALIZZATI") {
+                                        pdfSelezionato = nil
+                                        DispatchQueue.main.async {
+                                            NotificationCenter.default.post(name: .contabilitaMostraAnalisi, object: existing)
+                                        }
+                                    }
+                                    .font(.subheadline.weight(.semibold))
+                                }
+
+                                if let errore = errore {
+                                    Text(errore).font(.footnote).foregroundColor(.red)
+                                }
+                            }
                         }
+                        .padding(.vertical, 8)
                     }
                     .listStyle(.plain)
                 }
@@ -123,11 +160,32 @@ struct PDFLocaliView: View {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
             }
-            .onAppear { store.importaDaCondividi() }
-            .sheet(item: $pdfDaMostrare) { file in
+            .onAppear { store.importaDaCondividi(); store.ricarica() }
+            .sheet(item: $pdfSelezionato) { file in
                 PDFViewer(url: file)
             }
         }
         .navigationViewStyle(.stack)
     }
+
+    private func analizza(_ file: URL) {
+        analisiInCorso = true
+        errore = nil
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = analysisStore.analizza(file)
+            DispatchQueue.main.async {
+                analisiInCorso = false
+                if result == nil {
+                    errore = "Impossibile leggere il testo del PDF. Se è una scansione fotografica, serve OCR."
+                } else {
+                    pdfSelezionato = nil
+                    NotificationCenter.default.post(name: .contabilitaMostraAnalisi, object: result)
+                }
+            }
+        }
+    }
+}
+
+extension Notification.Name {
+    static let contabilitaMostraAnalisi = Notification.Name("contabilitaMostraAnalisi")
 }

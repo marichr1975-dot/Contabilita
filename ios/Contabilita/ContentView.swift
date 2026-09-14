@@ -108,6 +108,7 @@ struct ContentView: View {
     @State private var mostraDatiAnalizzati = false
     @State private var mostraPDF = false
     @State private var pdfImportati = 0
+    @StateObject private var analysisStore = PDFAnalysisStore()
 
     var body: some View {
         NavigationView {
@@ -153,7 +154,7 @@ struct ContentView: View {
                 SelezionaDataModificaView(archivio: archivio)
             }
             .sheet(isPresented: $mostraDatiAnalizzati) {
-                DatiAnalizzatiView(archivio: archivio)
+                DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore)
             }
             .sheet(isPresented: $mostraPDF) {
                 PDFImportatiView()
@@ -602,6 +603,7 @@ struct SelezionaDataModificaView: View {
     @State private var data = Date()
     @State private var bolletteTrovate: [Bolletta] = []
     @State private var mostraErrore = false
+    @State private var bollettaDaModificare: Bolletta?
 
     var body: some View {
         NavigationView {
@@ -672,7 +674,18 @@ struct SelezionaDataModificaView: View {
             } message: {
                 Text("In questa data non ci sono bollette.")
             }
+            .sheet(item: $bollettaDaModificare) { bolletta in
+                ModificaBollettaView(
+                    archivio: archivio,
+                    bolletta: bolletta,
+                    onDeleted: {
+                        bolletteTrovate.removeAll { $0.id == bolletta.id }
+                    }
+                )
+                .navigationViewStyle(.stack)
+            }
         }
+        .navigationViewStyle(.stack)
     }
 
     private func cercaBollette() {
@@ -687,20 +700,7 @@ struct SelezionaDataModificaView: View {
     }
 
     private func apri(_ bolletta: Bolletta) {
-        let view = ModificaBollettaView(archivio: archivio, bolletta: bolletta, onDeleted: {
-            bolletteTrovate.removeAll { $0.id == bolletta.id }
-        })
-        let host = UIHostingController(rootView: view)
-        host.modalPresentationStyle = .pageSheet
-
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let root = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController {
-            var presenter = root
-            while let presented = presenter.presentedViewController {
-                presenter = presented
-            }
-            presenter.present(host, animated: true)
-        }
+        bollettaDaModificare = bolletta
     }
 
     private func totalePezzi(_ bolletta: Bolletta) -> Int {
@@ -836,6 +836,7 @@ struct ModificaBollettaView: View {
                 .padding(22)
             }
         }
+        .navigationViewStyle(.stack)
     }
 
     private func salva() {
@@ -874,65 +875,67 @@ struct NessunaBollettaView: View {
 
 struct DatiAnalizzatiView: View {
     @ObservedObject var archivio: Archivio
+    @ObservedObject var analysisStore: PDFAnalysisStore
     @Environment(\.presentationMode) private var presentationMode
-
-    // Per ora vengono mostrate le date che hanno bollette salvate.
-    // La lettura del prospetto aziendale e il calcolo delle incongruenze
-    // verranno collegati alla condivisione/importazione del PDF nel prossimo passaggio.
-    private var dateDisponibili: [Bolletta] {
-        archivio.bollette.sorted { $0.data > $1.data }
-    }
+    @State private var analisiSelezionata: PDFAnalysis?
 
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                HStack {
-                    Text("INCONGRUENZE")
+                if analysisStore.analyses.isEmpty {
+                    Spacer()
+                    Image(systemName: "chart.bar.doc.horizontal")
+                        .font(.system(size: 48))
+                        .foregroundColor(.purple)
+                    Text("Nessun PDF analizzato.")
                         .font(.title2)
-                        
-                    Spacer()
-                }
-                .padding(18)
-
-                if dateDisponibili.isEmpty {
-                    Spacer()
-                    Text("Nessuna bolletta analizzata.")
-                        .font(.title3)
-                    Text("Quando arriverà il prospetto dell'azienda, qui saranno indicate le date con differenze.")
-                        .font(.body)
+                        .fontWeight(.semibold)
+                    Text("Apri PDF AZIENDA, seleziona il prospetto e premi CARICA E ANALIZZA.")
                         .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
                         .padding(.horizontal, 30)
                     Spacer()
                 } else {
                     List {
-                        Section(header: Text("DATE DA CONTROLLARE")) {
-                            ForEach(dateDisponibili) { bolletta in
-                                NavigationLink {
-                                    ConfrontoBollettaView(bolletta: bolletta)
+                        Section("PROSPETTI ANALIZZATI") {
+                            ForEach(analysisStore.analyses) { analysis in
+                                Button {
+                                    analisiSelezionata = analysis
                                 } label: {
-                                    HStack {
-                                        Text(bolletta.data.formatted(date: .numeric, time: .omitted))
-                                            .font(.title3)
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(analysis.fileName).font(.headline).foregroundColor(.primary).lineLimit(2)
+                                            if let date = analysis.dataBolletta {
+                                                Text("Data: \(date.formatted(date: .numeric, time: .omitted))")
+                                                    .font(.subheadline).foregroundColor(.secondary)
+                                            }
+                                            Text("\(analysis.rows.count) righe riconosciute")
+                                                .font(.subheadline).foregroundColor(.secondary)
+                                        }
                                         Spacer()
-                                        Image(systemName: "exclamationmark.triangle")
+                                        Image(systemName: "chevron.right").foregroundColor(.secondary)
                                     }
-                                    .padding(.vertical, 8)
+                                    .padding(.vertical, 6)
                                 }
                             }
                         }
                     }
+                    .listStyle(.insetGrouped)
                 }
             }
             .navigationTitle("Dati analizzati")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Chiudi") {
-                        presentationMode.wrappedValue.dismiss()
-                    }
+                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
             }
+            .sheet(item: $analisiSelezionata) { analysis in
+                PDFAnalysisDetailView(analysis: analysis)
+            }
         }
+        .navigationViewStyle(.stack)
     }
 }
 

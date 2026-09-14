@@ -13,12 +13,14 @@ struct ContabilitaApp: App {
 struct ContabilitaRootView: View {
     @StateObject private var archivio = Archivio()
     @StateObject private var pdfTransfer = PDFTransferStore()
+    @StateObject private var analysisStore = PDFAnalysisStore()
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var nuovaBolletta = false
     @State private var modificaBolletta = false
     @State private var mostraDatiAnalizzati = false
     @State private var mostraPDF = false
+    @State private var analisiDaMostrare: PDFAnalysis?
 
     private var isPad: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
@@ -46,12 +48,22 @@ struct ContabilitaRootView: View {
                 .navigationViewStyle(.stack)
         }
         .sheet(isPresented: $mostraDatiAnalizzati) {
-            DatiAnalizzatiView(archivio: archivio)
+            DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore)
                 .navigationViewStyle(.stack)
         }
         .sheet(isPresented: $mostraPDF) {
-            PDFLocaliView(store: pdfTransfer)
+            PDFLocaliView(store: pdfTransfer, analysisStore: analysisStore)
                 .navigationViewStyle(.stack)
+        }
+        .sheet(item: $analisiDaMostrare) { analysis in
+            PDFAnalysisDetailView(analysis: analysis)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .contabilitaMostraAnalisi)) { note in
+            if let analysis = note.object as? PDFAnalysis {
+                analisiDaMostrare = analysis
+                mostraPDF = false
+                mostraDatiAnalizzati = false
+            }
         }
         .onAppear {
             pdfTransfer.importaDaCondividi()
