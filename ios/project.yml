@@ -14,7 +14,9 @@ targets:
     platform: iOS
     deploymentTarget: "15.0"
     sources:
-      - Contabilita
+      - path: Contabilita/App.swift
+      - path: Contabilita/ContentView.swift
+      - path: Contabilita/Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gotrail.contabilita
@@ -30,5 +32,5 @@ targets:
       properties:
         CFBundleDisplayName: Contabilità
         CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "4"
+        CFBundleVersion: "5"
         UILaunchScreen: {}
