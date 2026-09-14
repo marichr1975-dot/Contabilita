@@ -106,14 +106,14 @@ struct ContentView: View {
 
                 Text("Contabilità")
                     .font(.largeTitle)
-                    .bold()
+                    
 
                 Button {
                     nuovaBolletta = true
                 } label: {
                     Text("NUOVA BOLLETTA")
                         .font(.title2)
-                        .bold()
+                        
                         .frame(maxWidth: .infinity)
                         .padding()
                 }
@@ -124,7 +124,7 @@ struct ContentView: View {
                 } label: {
                     Text("MODIFICA ULTIMA BOLLETTA")
                         .font(.title2)
-                        .bold()
+                        
                         .frame(maxWidth: .infinity)
                         .padding()
                 }
@@ -135,7 +135,7 @@ struct ContentView: View {
                 } label: {
                     Text("DATI ANALIZZATI")
                         .font(.title2)
-                        .bold()
+                        
                         .frame(maxWidth: .infinity)
                         .padding()
                 }
@@ -218,7 +218,7 @@ struct NuovaBollettaView: View {
     @State private var data = Date()
     @State private var dataConfermata = false
     @State private var gruppi: [GruppoLavorazione] = []
-    @State private var rigaAttiva: Int
+    @FocusState private var rigaAttiva: Int?
     @State private var nuovoArticolo = ""
     @State private var mostraNuovoArticolo = false
 
@@ -249,7 +249,7 @@ struct NuovaBollettaView: View {
     private var scegliData: some View {
         VStack(spacing: 20) {
             Text("SCEGLI LA DATA")
-                .font(.title2).bold()
+                .font(.title2)
 
             DatePicker("Data", selection: $data, displayedComponents: .date)
                 .datePickerStyle(.graphical)
@@ -259,7 +259,7 @@ struct NuovaBollettaView: View {
                 dataConfermata = true
                 rigaAttiva = 0
             } label: {
-                Text("OK").font(.title2).bold()
+                Text("OK").font(.title2)
                     .frame(maxWidth: .infinity).padding()
             }
             .buttonStyle(.borderedProminent)
@@ -298,7 +298,7 @@ struct NuovaBollettaView: View {
             Button {
                 salva()
             } label: {
-                Text("SALVA").font(.title2).bold()
+                Text("SALVA").font(.title2)
                     .frame(maxWidth: .infinity).padding()
             }
             .buttonStyle(.borderedProminent)
@@ -329,15 +329,15 @@ struct NuovaBollettaView: View {
         VStack(spacing: 5) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading) {
-                    Text("NOME").font(.caption).bold()
+                    Text("NOME").font(.caption)
                     Text("data").font(.headline)
                 }
 
                 Spacer()
 
                 VStack(spacing: 1) {
-                    Text("elenco").font(.headline).bold()
-                    Text("lavori").font(.headline).bold()
+                    Text("elenco").font(.headline)
+                    Text("lavori").font(.headline)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(Color.black).foregroundColor(.white)
@@ -349,10 +349,10 @@ struct NuovaBollettaView: View {
 
             HStack {
                 Text(data.formatted(date: .numeric, time: .omitted))
-                    .font(.title3).bold()
+                    .font(.title3)
                     .foregroundColor(.blue)
                 Spacer()
-                Text("QUANTITÀ").font(.headline).bold()
+                Text("QUANTITÀ").font(.headline)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
@@ -363,9 +363,9 @@ struct NuovaBollettaView: View {
         VStack(spacing: 0) {
             HStack(alignment: .bottom) {
                 Text(gruppi[g].nome)
-                    .font(.headline).bold()
+                    .font(.headline)
                 Spacer()
-                Text("quantità").font(.headline).bold()
+                Text("quantità").font(.headline)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
 
@@ -443,7 +443,7 @@ struct ModificaBollettaView: View {
     @State private var data: Date
     @State private var mostraCambioData = false
     @State private var lavorazioni: [Lavorazione]
-    @FocusState private var rigaAttiva: Int
+    @FocusState private var rigaAttiva: Int?
 
     init(archivio: Archivio, bolletta: Bolletta) {
         self.archivio = archivio
@@ -458,9 +458,9 @@ struct ModificaBollettaView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("BOLLETTA DEL")
-                            .font(.caption).bold()
+                            .font(.caption)
                         Text(data.formatted(date: .numeric, time: .omitted))
-                            .font(.title3).bold().foregroundColor(.blue)
+                            .font(.title3).foregroundColor(.blue)
                     }
 
                     Spacer()
@@ -479,9 +479,9 @@ struct ModificaBollettaView: View {
                     ScrollView {
                         VStack(spacing: 0) {
                             HStack {
-                                Text("LAVORAZIONE").font(.headline).bold()
+                                Text("LAVORAZIONE").font(.headline)
                                 Spacer()
-                                Text("QUANTITÀ").font(.headline).bold().frame(width: 100)
+                                Text("QUANTITÀ").font(.headline).frame(width: 100)
                             }
                             .padding(14)
 
@@ -530,7 +530,7 @@ struct ModificaBollettaView: View {
                     )
                     presentationMode.wrappedValue.dismiss()
                 } label: {
-                    Text("SALVA").font(.title2).bold()
+                    Text("SALVA").font(.title2)
                         .frame(maxWidth: .infinity).padding()
                 }
                 .buttonStyle(.borderedProminent)
@@ -545,7 +545,7 @@ struct ModificaBollettaView: View {
             }
             .sheet(isPresented: $mostraCambioData) {
                 VStack(spacing: 20) {
-                    Text("CAMBIA DATA").font(.title2).bold()
+                    Text("CAMBIA DATA").font(.title2)
                     DatePicker("Data", selection: $data, displayedComponents: .date)
                         .datePickerStyle(.graphical)
                         .labelsHidden()
@@ -593,7 +593,7 @@ struct DatiAnalizzatiView: View {
                 HStack {
                     Text("INCONGRUENZE")
                         .font(.title2)
-                        .bold()
+                        
                     Spacer()
                 }
                 .padding(18)
@@ -647,7 +647,7 @@ struct ConfrontoBollettaView: View {
         VStack(spacing: 0) {
             Text("CONFRONTO")
                 .font(.title2)
-                .bold()
+                
                 .padding(.top, 12)
 
             Text(bolletta.data.formatted(date: .numeric, time: .omitted))
