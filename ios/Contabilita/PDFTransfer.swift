@@ -27,7 +27,7 @@ final class PDFTransferStore: ObservableObject {
             return
         }
 
-        let name = pasteboard.string ?? "prospetto"
+        let name = pasteboard.string(forPasteboardType: Self.namePasteboardType) ?? "prospetto"
         salva(data: data, nome: name)
 
         pasteboard.items = []

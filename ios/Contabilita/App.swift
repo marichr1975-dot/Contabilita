@@ -51,6 +51,7 @@ struct ContabilitaRootView: View {
         }
         .navigationViewStyle(.stack)
         .onAppear { pdfTransfer.importaDaCondividi() }
+        .onOpenURL { _ in pdfTransfer.importaDaCondividi() }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 pdfTransfer.importaDaCondividi()
