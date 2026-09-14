@@ -3,8 +3,6 @@ import SwiftUI
 @main
 struct ContabilitaApp: App {
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
+        WindowGroup { ContentView() }
     }
 }
