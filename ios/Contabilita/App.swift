@@ -2,6 +2,17 @@ import SwiftUI
 
 @main
 struct ContabilitaApp: App {
+    @StateObject private var archivio = Archivio()
+    @StateObject private var pdfTransfer = PDFTransfer()
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
+    @State private var nuovaBolletta = false
+    @State private var modificaBolletta = false
+    @State private var mostraDatiAnalizzati = false
+    @State private var mostraPDF = false
+
     var body: some Scene {
         WindowGroup {
             Group {
