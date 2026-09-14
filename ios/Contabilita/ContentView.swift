@@ -1,6 +1,10 @@
 import SwiftUI
 import PDFKit
 
+extension URL: Identifiable {
+    public var id: String { absoluteString }
+}
+
 struct Lavorazione: Identifiable, Codable {
     let id: UUID
     var nome: String
