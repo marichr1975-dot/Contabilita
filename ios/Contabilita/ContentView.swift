@@ -122,7 +122,7 @@ struct ContentView: View {
                 Button {
                     modificaBolletta = true
                 } label: {
-                    Text("MODIFICA ULTIMA BOLLETTA")
+                    Text("MODIFICA BOLLETTA")
                         .font(.title2)
                         
                         .frame(maxWidth: .infinity)
@@ -237,6 +237,12 @@ struct NuovaBollettaView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Annulla") { presentationMode.wrappedValue.dismiss() }
                 }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if dataConfermata {
+                        Button("SALVA") { salva() }
+                            .font(.system(size: 17, weight: .bold))
+                    }
+                }
             }
         }
         .onAppear {
@@ -295,14 +301,6 @@ struct NuovaBollettaView: View {
                 }
             }
 
-            Button {
-                salva()
-            } label: {
-                Text("SALVA").font(.title2)
-                    .frame(maxWidth: .infinity).padding()
-            }
-            .buttonStyle(.borderedProminent)
-            .padding(12)
         }
         .alert("Nuovo articolo", isPresented: $mostraNuovoArticolo) {
             TextField("Nome articolo", text: $nuovoArticolo)
@@ -517,30 +515,15 @@ struct ModificaBollettaView: View {
                     }
                 }
 
-                Button {
-                    let nuovaData = data
-                    archivio.salvaBolletta(
-                        Bolletta(
-                            id: bolletta.id,
-                            data: nuovaData,
-                            lavorazioni: lavorazioni.map {
-                                Lavorazione(id: $0.id, nome: $0.nome, quantita: $0.quantita.isEmpty ? "0" : $0.quantita)
-                            }
-                        )
-                    )
-                    presentationMode.wrappedValue.dismiss()
-                } label: {
-                    Text("SALVA").font(.title2)
-                        .frame(maxWidth: .infinity).padding()
-                }
-                .buttonStyle(.borderedProminent)
-                .padding(12)
-            }
             .navigationTitle("Modifica bolletta")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Annulla") { presentationMode.wrappedValue.dismiss() }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("SALVA") { salva() }
+                        .font(.system(size: 17, weight: .bold))
                 }
             }
             .sheet(isPresented: $mostraCambioData) {
@@ -557,6 +540,23 @@ struct ModificaBollettaView: View {
                 .padding(22)
             }
         }
+    }
+
+    private func salva() {
+        archivio.salvaBolletta(
+            Bolletta(
+                id: bolletta.id,
+                data: data,
+                lavorazioni: lavorazioni.map {
+                    Lavorazione(
+                        id: $0.id,
+                        nome: $0.nome,
+                        quantita: $0.quantita.isEmpty ? "0" : $0.quantita
+                    )
+                }
+            )
+        )
+        presentationMode.wrappedValue.dismiss()
     }
 }
 
