@@ -218,7 +218,7 @@ struct NuovaBollettaView: View {
     @State private var data = Date()
     @State private var dataConfermata = false
     @State private var gruppi: [GruppoLavorazione] = []
-    @State private var rigaAttiva: Int?
+    @State private var rigaAttiva: Int
     @State private var nuovoArticolo = ""
     @State private var mostraNuovoArticolo = false
 
@@ -443,7 +443,7 @@ struct ModificaBollettaView: View {
     @State private var data: Date
     @State private var mostraCambioData = false
     @State private var lavorazioni: [Lavorazione]
-    @FocusState private var rigaAttiva: Int?
+    @FocusState private var rigaAttiva: Int
 
     init(archivio: Archivio, bolletta: Bolletta) {
         self.archivio = archivio
@@ -550,7 +550,7 @@ struct ModificaBollettaView: View {
                         .datePickerStyle(.graphical)
                         .labelsHidden()
                     Button("OK") { mostraCambioData = false }
-                        .font(.title2).bold()
+                        .font(.system(size: 22, weight: .bold))
                         .buttonStyle(.borderedProminent)
                     Spacer()
                 }
