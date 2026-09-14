@@ -219,6 +219,13 @@ struct NuovaBollettaView: View {
 
     private var lista: some View {
         VStack(spacing: 0) {
+                Image("BollettaOriginale")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 620)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 8)
+
             HStack {
                 Text(data.formatted(date: .numeric, time: .omitted)).font(.headline)
                 Spacer()
