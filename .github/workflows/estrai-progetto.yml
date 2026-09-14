@@ -1,0 +1,53 @@
+name: Estrai progetto ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "*.zip"
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trova ed estrai ZIP
+        shell: bash
+        run: |
+          set -e
+          ZIP=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+          if [ -z "$ZIP" ]; then
+            echo "Nessun ZIP trovato"
+            exit 0
+          fi
+
+          mkdir -p .extract
+          unzip -o "$ZIP" -d .extract
+
+          # Se lo ZIP contiene una sola cartella principale, ne usa il contenuto.
+          shopt -s dotglob
+          entries=(.extract/*)
+          if [ ${#entries[@]} -eq 1 ] && [ -d "${entries[0]}" ]; then
+            cp -a "${entries[0]}"/. .
+          else
+            cp -a .extract/. .
+          fi
+
+          rm -rf .extract "$ZIP"
+
+      - name: Commit estrazione
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nessuna modifica da salvare"
+          else
+            git commit -m "Estrai progetto dal pacchetto ZIP"
+            git push
+          fi
