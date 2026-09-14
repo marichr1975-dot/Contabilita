@@ -102,6 +102,8 @@ final class Archivio: ObservableObject {
 
 struct ContentView: View {
     @StateObject private var archivio = Archivio()
+    @StateObject private var pdfTransfer = PDFTransferStore()
+    @StateObject private var analysisStore = PDFAnalysisStore()
     @Environment(\.scenePhase) private var scenePhase
     @State private var nuovaBolletta = false
     @State private var modificaBolletta = false
@@ -153,10 +155,10 @@ struct ContentView: View {
                 SelezionaDataModificaView(archivio: archivio)
             }
             .sheet(isPresented: $mostraDatiAnalizzati) {
-                DatiAnalizzatiView(archivio: archivio)
+                DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore)
             }
             .sheet(isPresented: $mostraPDF) {
-                PDFImportatiView()
+                PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore)
             }
             .onAppear { aggiornaPDF() }
             .onChange(of: scenePhase) { phase in
