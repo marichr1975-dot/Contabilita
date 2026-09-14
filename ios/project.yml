@@ -3,8 +3,6 @@ options:
   deploymentTarget:
     iOS: "15.0"
   createIntermediateGroups: true
-  xcodeVersion: "15.4"
-  projectFormat: "xcode15_3"
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -14,17 +12,14 @@ targets:
     platform: iOS
     deploymentTarget: "15.0"
     sources:
-      - path: Contabilita/App.swift
-      - path: Contabilita/ContentView.swift
-      - path: Contabilita/Assets.xcassets
+      - Contabilita
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gotrail.contabilita
         PRODUCT_NAME: Contabilita
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "2"
         INFOPLIST_KEY_CFBundleDisplayName: Contabilità
         INFOPLIST_KEY_LSRequiresIPhoneOS: true
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
     info:
@@ -32,5 +27,5 @@ targets:
       properties:
         CFBundleDisplayName: Contabilità
         CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "5"
+        CFBundleVersion: "1"
         UILaunchScreen: {}
