@@ -149,11 +149,7 @@ struct ContentView: View {
                 NuovaBollettaView(archivio: archivio)
             }
             .sheet(isPresented: $modificaBolletta) {
-                if let ultima = archivio.ultimaBolletta {
-                    ModificaBollettaView(archivio: archivio, bolletta: ultima)
-                } else {
-                    NessunaBollettaView()
-                }
+                SelezionaDataModificaView(archivio: archivio)
             }
             .sheet(isPresented: $mostraDatiAnalizzati) {
                 DatiAnalizzatiView(archivio: archivio)
@@ -433,6 +429,66 @@ struct NuovaBollettaView: View {
     }
 }
 
+struct SelezionaDataModificaView: View {
+    @ObservedObject var archivio: Archivio
+    @Environment(\.presentationMode) private var presentationMode
+
+    @State private var data = Date()
+    @State private var bollettaTrovata: Bolletta?
+    @State private var mostraErrore = false
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 22) {
+                Text("SCEGLI LA DATA DELLA BOLLETTA")
+                    .font(.title2)
+
+                DatePicker("Data", selection: $data, displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .labelsHidden()
+
+                Button {
+                    cercaBolletta()
+                } label: {
+                    Text("CERCA")
+                        .font(.system(size: 22, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                }
+                .buttonStyle(.borderedProminent)
+
+                Spacer()
+            }
+            .padding(22)
+            .navigationTitle("Modifica bolletta")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Annulla") { presentationMode.wrappedValue.dismiss() }
+                }
+            }
+            .alert("Nessuna bolletta", isPresented: $mostraErrore) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("In questa data non ci sono bollette.")
+            }
+            .sheet(item: $bollettaTrovata) { bolletta in
+                ModificaBollettaView(archivio: archivio, bolletta: bolletta)
+            }
+        }
+    }
+
+    private func cercaBolletta() {
+        let cal = Calendar.current
+        if let trovata = archivio.bollette.first(where: { cal.isDate($0.data, inSameDayAs: data) }) {
+            bollettaTrovata = trovata
+        } else {
+            bollettaTrovata = nil
+            mostraErrore = true
+        }
+    }
+}
+
 struct ModificaBollettaView: View {
     @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
@@ -514,7 +570,6 @@ struct ModificaBollettaView: View {
                         }
                     }
                 }
-            }
 
             .navigationTitle("Modifica bolletta")
             .navigationBarTitleDisplayMode(.inline)
