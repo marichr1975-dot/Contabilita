@@ -526,7 +526,9 @@ struct SelezionaDataModificaView: View {
     }
 
     private func apri(_ bolletta: Bolletta) {
-        let view = ModificaBollettaView(archivio: archivio, bolletta: bolletta)
+        let view = ModificaBollettaView(archivio: archivio, bolletta: bolletta) {
+            bolletteTrovate.removeAll { $0.id == bolletta.id }
+        }
         let host = UIHostingController(rootView: view)
         host.modalPresentationStyle = .pageSheet
 
@@ -549,6 +551,7 @@ struct ModificaBollettaView: View {
     @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
     let bolletta: Bolletta
+    var onDeleted: (() -> Void)? = nil
 
     @State private var data: Date
     @State private var mostraCambioData = false
@@ -650,6 +653,7 @@ struct ModificaBollettaView: View {
             .alert("Cancella bolletta", isPresented: $mostraConfermaCancella) {
                 Button("Cancella", role: .destructive) {
                     archivio.eliminaBolletta(id: bolletta.id)
+                    onDeleted?()
                     presentationMode.wrappedValue.dismiss()
                 }
                 Button("Annulla", role: .cancel) { }
