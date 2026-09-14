@@ -1,3 +1,4 @@
+import UIKit
 import SwiftUI
 
 struct Articolo: Identifiable, Codable, Equatable {
