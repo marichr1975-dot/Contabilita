@@ -444,25 +444,28 @@ struct SelezionaDataModificaView: View {
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 22) {
-                Text("SCEGLI LA DATA DELLA BOLLETTA")
-                    .font(.title2)
+            VStack(spacing: 18) {
+                if bolletteTrovate.isEmpty {
+                    Text("SCEGLI LA DATA DELLA BOLLETTA")
+                        .font(.title2)
 
-                DatePicker("Data", selection: $data, displayedComponents: .date)
-                    .datePickerStyle(.graphical)
-                    .labelsHidden()
+                    DatePicker("Data", selection: $data, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .labelsHidden()
 
-                Button {
-                    cercaBollette()
-                } label: {
-                    Text("CERCA")
-                        .font(.system(size: 22, weight: .bold))
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                }
-                .buttonStyle(.borderedProminent)
+                    Button {
+                        cercaBollette()
+                    } label: {
+                        Text("CERCA")
+                            .font(.system(size: 22, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Text(data.formatted(date: .long, time: .omitted))
+                        .font(.title2)
 
-                if !bolletteTrovate.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         Text(bolletteTrovate.count == 1 ? "BOLLETTA TROVATA" : "BOLLETTE TROVATE")
                             .font(.headline)
@@ -486,6 +489,11 @@ struct SelezionaDataModificaView: View {
                         .listStyle(.plain)
                     }
                     .padding(.horizontal, 8)
+
+                    Button("CAMBIA DATA") {
+                        bolletteTrovate = []
+                    }
+                    .font(.headline)
                 }
 
                 Spacer()
