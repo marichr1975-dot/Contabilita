@@ -15,26 +15,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verifica progetto
+      - name: Installa XcodeGen
         run: |
-          set -e
-          test -d ios/Contabilita.xcodeproj
-          test -f ios/Contabilita/App.swift
-          test -f ios/Contabilita/ContentView.swift
-          echo "Progetto iOS trovato."
+          brew install xcodegen
+
+      - name: Genera progetto Xcode
+        working-directory: ios
+        run: |
+          xcodegen generate
+          xcodebuild -list -project Contabilita.xcodeproj
 
       - name: Compila progetto iOS
         run: |
           set -e
-          xcodebuild \
-            -project ios/Contabilita.xcodeproj \
-            -scheme Contabilita \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            build
+          xcodebuild             -project ios/Contabilita.xcodeproj             -scheme Contabilita             -configuration Release             -sdk iphoneos             -derivedDataPath build             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             build
 
       - name: Crea IPA non firmata
         run: |

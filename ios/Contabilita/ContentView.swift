@@ -18,7 +18,6 @@ struct ContentView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .font(.title3)
-                .padding(.top, 10)
             }
             .padding(40)
             .navigationTitle("Contabilità")
