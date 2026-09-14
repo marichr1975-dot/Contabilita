@@ -51,7 +51,7 @@ struct ContabilitaRootView: View {
                 .navigationViewStyle(.stack)
         }
         .sheet(isPresented: $mostraPDF) {
-            PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore, archivio: archivio)
+            PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore)
                 .navigationViewStyle(.stack)
         }
         .onAppear {

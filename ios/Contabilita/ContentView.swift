@@ -102,8 +102,6 @@ final class Archivio: ObservableObject {
 
 struct ContentView: View {
     @StateObject private var archivio = Archivio()
-    @StateObject private var pdfTransfer = PDFTransferStore()
-    @StateObject private var analysisStore = PDFAnalysisStore()
     @Environment(\.scenePhase) private var scenePhase
     @State private var nuovaBolletta = false
     @State private var modificaBolletta = false
@@ -155,10 +153,10 @@ struct ContentView: View {
                 SelezionaDataModificaView(archivio: archivio)
             }
             .sheet(isPresented: $mostraDatiAnalizzati) {
-                DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore)
+                DatiAnalizzatiView(archivio: archivio)
             }
             .sheet(isPresented: $mostraPDF) {
-                PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore, archivio: archivio)
+                PDFImportatiView()
             }
             .onAppear { aggiornaPDF() }
             .onChange(of: scenePhase) { phase in
@@ -216,54 +214,38 @@ struct ContentView: View {
 struct PDFImportatiView: View {
     @ObservedObject var store: PDFTransferStore
     @ObservedObject var analysisStore: PDFAnalysisStore
-    @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
     @State private var pdfDaMostrare: URL?
-    @State private var analisiDaMostrare: PDFAnalysisResult?
-    @State private var analisiInCorso = false
-    @State private var erroreAnalisi: String?
+    @State private var analisiInCorso: URL?
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 12) {
+            VStack(spacing: 18) {
                 if store.files.isEmpty {
                     Spacer()
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 48))
                         .foregroundColor(.teal)
-                    Text("Nessun PDF ricevuto")
-                        .font(.title2)
+                    Text("Nessun PDF ricevuto").font(.title2)
                     Text("Da WhatsApp o File: Condividi → Contabilità")
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center).foregroundColor(.secondary)
                     Spacer()
                 } else {
-                    Text("PDF RICEVUTI")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .padding(.top, 8)
-
+                    Text("PDF RICEVUTI").font(.title2).fontWeight(.semibold).padding(.top, 8)
                     List(store.files, id: \.self) { file in
                         HStack(spacing: 10) {
-                            Image(systemName: "doc.fill")
-                                .foregroundColor(.teal)
-
-                            Text(file.lastPathComponent)
-                                .font(.body)
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-
+                            Image(systemName: "doc.fill").foregroundColor(.teal)
+                            Text(file.lastPathComponent).lineLimit(2).foregroundColor(.primary)
+                            Spacer()
                             Button("CARICA") {
-                                analizza(file)
+                                analisiInCorso = file
+                                analysisStore.analizza(file: file, bollette: [])
+                                analisiInCorso = nil
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(.green)
-                            .disabled(analisiInCorso)
-
-                            Button("MOSTRA PDF") {
-                                pdfDaMostrare = file
-                            }
-                            .buttonStyle(.bordered)
+                            Button("MOSTRA PDF") { pdfDaMostrare = file }
+                                .buttonStyle(.bordered)
                         }
                         .padding(.vertical, 8)
                     }
@@ -278,48 +260,10 @@ struct PDFImportatiView: View {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
             }
-            .onAppear { store.importaDaCondividi() }
-            .overlay {
-                if analisiInCorso {
-                    ProgressView("Analisi PDF in corso…")
-                        .padding(24)
-                        .background(.regularMaterial)
-                        .cornerRadius(16)
-                }
-            }
-            .alert("Analisi PDF", isPresented: Binding(
-                get: { erroreAnalisi != nil },
-                set: { if !$0 { erroreAnalisi = nil } }
-            )) {
-                Button("OK", role: .cancel) { erroreAnalisi = nil }
-            } message: {
-                Text(erroreAnalisi ?? "")
-            }
-            .sheet(item: $pdfDaMostrare) { file in
-                PDFViewer(url: file)
-            }
-            .sheet(item: $analisiDaMostrare) { result in
-                PDFAnalysisDetailView(result: result, archivio: archivio)
-            }
+            .onAppear { store.ricarica() }
+            .sheet(item: $pdfDaMostrare) { file in PDFViewer(url: file) }
         }
         .navigationViewStyle(.stack)
-    }
-
-    private func analizza(_ file: URL) {
-        guard !analisiInCorso else { return }
-        analisiInCorso = true
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = PDFAnalyzer.analyze(url: file)
-            DispatchQueue.main.async {
-                analisiInCorso = false
-                if let result = result {
-                    analysisStore.save(result)
-                    analisiDaMostrare = result
-                } else {
-                    erroreAnalisi = "Non riesco a leggere dati utili dal PDF. Il file deve contenere testo selezionabile."
-                }
-            }
-        }
     }
 }
 
@@ -413,7 +357,7 @@ func gruppiBollettaDaNomi() -> [GruppoLavorazione] {
 struct NuovaBollettaView: View {
     @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
-    let existing: Bolletta?
+    private let bollettaDaModificare: Bolletta?
 
     @State private var data = Date()
     @State private var dataConfermata = false
@@ -422,16 +366,15 @@ struct NuovaBollettaView: View {
     @State private var nuovoArticolo = ""
     @State private var mostraNuovoArticolo = false
 
-    init(archivio: Archivio, existing: Bolletta? = nil) {
+    init(archivio: Archivio, bollettaDaModificare: Bolletta? = nil) {
         self.archivio = archivio
-        self.existing = existing
-        _data = State(initialValue: existing?.data ?? Date())
-        _dataConfermata = State(initialValue: existing != nil)
-        if let existing {
-            _gruppi = State(initialValue: [GruppoLavorazione(nome: "LAVORAZIONI", voci: existing.lavorazioni.map { VoceLavorazione(nome: $0.nome, quantita: $0.quantita) })])
-        } else {
-            _gruppi = State(initialValue: gruppiBollettaDaNomi())
-        }
+        self.bollettaDaModificare = bollettaDaModificare
+        _data = State(initialValue: bollettaDaModificare?.data ?? Date())
+        _dataConfermata = State(initialValue: bollettaDaModificare != nil)
+        let gruppiIniziali: [GruppoLavorazione] = bollettaDaModificare.map { b in
+            b.lavorazioni.map { GruppoLavorazione(nome: $0.nome, voci: [VoceLavorazione(nome: "", quantita: $0.quantita)]) }
+        } ?? []
+        _gruppi = State(initialValue: gruppiIniziali)
     }
 
     var body: some View {
@@ -443,7 +386,7 @@ struct NuovaBollettaView: View {
                     mascheraBolletta
                 }
             }
-            .navigationTitle(dataConfermata ? (existing == nil ? "Carica bolletta" : "Modifica bolletta") : "Nuova bolletta")
+            .navigationTitle(dataConfermata ? "Elenco lavori" : "Nuova bolletta")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -451,23 +394,14 @@ struct NuovaBollettaView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if dataConfermata {
-                        HStack(spacing: 12) {
-                            if existing != nil {
-                                Button("CANCELLA") {
-                                    if let existing { archivio.eliminaBolletta(id: existing.id) }
-                                    presentationMode.wrappedValue.dismiss()
-                                }
-                                .foregroundColor(.red)
-                            }
-                            Button("SALVA") { salva() }
-                                .font(.system(size: 17, weight: .bold))
-                        }
+                        Button("SALVA") { salva() }
+                            .font(.system(size: 17, weight: .bold))
                     }
                 }
             }
         }
         .onAppear {
-            if gruppi.isEmpty && existing == nil {
+            if gruppi.isEmpty && bollettaDaModificare == nil {
                 gruppi = gruppiBollettaDaNomi()
             }
         }
@@ -643,18 +577,13 @@ struct NuovaBollettaView: View {
 
     private func salva() {
         var lista: [Lavorazione] = []
-        for gruppo in gruppi {
-            for voce in gruppo.voci {
-                let nome: String
-                if existing != nil && gruppo.nome == "LAVORAZIONI" {
-                    nome = voce.nome
-                } else {
-                    nome = gruppo.nome + (voce.nome.isEmpty ? "" : " \(voce.nome)")
-                }
-                lista.append(Lavorazione(nome: nome, quantita: voce.quantita.isEmpty ? "0" : voce.quantita))
+        for g in gruppi {
+            for v in g.voci {
+                let nome = v.nome.isEmpty ? g.nome : "\(g.nome) \(v.nome)"
+                lista.append(Lavorazione(nome: nome, quantita: v.quantita.isEmpty ? "0" : v.quantita))
             }
         }
-        archivio.salvaBolletta(Bolletta(id: existing?.id ?? UUID(), data: data, lavorazioni: lista))
+        archivio.salvaBolletta(Bolletta(id: bollettaDaModificare?.id ?? UUID(), data: data, lavorazioni: lista))
         presentationMode.wrappedValue.dismiss()
     }
 }
@@ -664,37 +593,154 @@ struct SelezionaDataModificaView: View {
     @Environment(\.presentationMode) private var presentationMode
     @State private var bollettaSelezionata: Bolletta?
 
-    private var bollette: [Bolletta] { archivio.bollette.sorted { $0.data > $1.data } }
+    var body: some View {
+        Group {
+            if archivio.bollette.count == 1, let bolletta = archivio.bollette.first {
+                NuovaBollettaView(archivio: archivio, bollettaDaModificare: bolletta)
+            } else if archivio.bollette.count > 1 {
+                NavigationView {
+                    List {
+                        Section("SELEZIONA BOLLETTA") {
+                            ForEach(archivio.bollette.sorted { $0.data > $1.data }) { bolletta in
+                                Button {
+                                    bollettaSelezionata = bolletta
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("BOLLETTA \(numeroBolletta(bolletta))")
+                                                .font(.title3).fontWeight(.semibold)
+                                            Text(bolletta.data.formatted(date: .numeric, time: .omitted))
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Spacer()
+                                        Text("\(totalePezzi(bolletta)) pezzi")
+                                            .font(.headline)
+                                        Image(systemName: "chevron.right").foregroundColor(.secondary)
+                                    }
+                                    .padding(.vertical, 10)
+                                }
+                            }
+                        }
+                    }
+                    .navigationTitle("Modifica bolletta")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button("Annulla") { presentationMode.wrappedValue.dismiss() }
+                        }
+                    }
+                }
+                .navigationViewStyle(.stack)
+            } else {
+                NavigationView {
+                    VStack(spacing: 20) {
+                        Text("Non ci sono bollette salvate.").font(.title3)
+                        Button("OK") { presentationMode.wrappedValue.dismiss() }
+                            .buttonStyle(.borderedProminent)
+                    }.padding().navigationTitle("Modifica bolletta")
+                }
+                .navigationViewStyle(.stack)
+            }
+        }
+        .sheet(item: $bollettaSelezionata) { bolletta in
+            NuovaBollettaView(archivio: archivio, bollettaDaModificare: bolletta)
+        }
+    }
+
+    private func numeroBolletta(_ bolletta: Bolletta) -> Int {
+        archivio.bollette.sorted { $0.data > $1.data }.firstIndex(where: { $0.id == bolletta.id })! + 1
+    }
+
+    private func totalePezzi(_ bolletta: Bolletta) -> Int {
+        bolletta.lavorazioni.reduce(0) { $0 + (Int($1.quantita) ?? 0) }
+    }
+}
+
+
+struct ModificaBollettaView: View {
+    @ObservedObject var archivio: Archivio
+    @Environment(\.presentationMode) private var presentationMode
+    let bolletta: Bolletta
+    var onDeleted: (() -> Void)? = nil
+
+    @State private var data: Date
+    @State private var mostraCambioData = false
+    @State private var lavorazioni: [Lavorazione]
+    @State private var mostraConfermaCancella = false
+    @FocusState private var rigaAttiva: Int?
+
+    init(archivio: Archivio, bolletta: Bolletta, onDeleted: (() -> Void)? = nil) {
+        self.archivio = archivio
+        self.bolletta = bolletta
+        self.onDeleted = onDeleted
+        _data = State(initialValue: bolletta.data)
+        _lavorazioni = State(initialValue: bolletta.lavorazioni)
+    }
 
     var body: some View {
         NavigationView {
-            Group {
-                if bollette.isEmpty {
-                    VStack(spacing: 20) {
-                        Text("Non ci sono ancora bollette salvate.").font(.title3)
-                        Button("CHIUDI") { presentationMode.wrappedValue.dismiss() }
-                            .buttonStyle(.borderedProminent)
+            VStack(spacing: 0) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("BOLLETTA DEL")
+                            .font(.caption)
+                        Text(data.formatted(date: .numeric, time: .omitted))
+                            .font(.title3)
+                            .foregroundColor(.blue)
                     }
-                    .padding()
-                } else if bollette.count == 1 {
-                    ProgressView("Apertura bolletta 1…")
-                        .onAppear { bollettaSelezionata = bollette[0] }
-                } else {
-                    List(Array(bollette.enumerated()), id: \.element.id) { indice, bolletta in
-                        Button { bollettaSelezionata = bolletta } label: {
+
+                    Spacer()
+
+                    Button("CAMBIA DATA") {
+                        mostraCambioData = true
+                    }
+                    .font(.headline)
+                }
+                .padding(14)
+                .background(Color(white: 0.97))
+
+                Divider()
+
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 0) {
                             HStack {
-                                Text("BOLLETTA \(indice + 1)").font(.title3).fontWeight(.semibold)
+                                Text("LAVORAZIONE").font(.headline)
                                 Spacer()
-                                VStack(alignment: .trailing) {
-                                    Text(bolletta.data.formatted(date: .numeric, time: .omitted))
-                                    Text("\(totalePezzi(bolletta)) pezzi").foregroundColor(.secondary)
-                                }
-                                Image(systemName: "chevron.right").foregroundColor(.secondary)
+                                Text("QUANTITÀ").font(.headline).frame(width: 100)
                             }
-                            .padding(.vertical, 10)
+                            .padding(14)
+
+                            ForEach(lavorazioni.indices, id: \.self) { index in
+                                HStack(spacing: 10) {
+                                    Text("□").font(.title3).frame(width: 24)
+                                    Text(lavorazioni[index].nome)
+                                        .font(.title3)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                                    TextField("", text: $lavorazioni[index].quantita)
+                                        .font(.system(size: 22))
+                                        .foregroundColor(.blue)
+                                        .multilineTextAlignment(.center)
+                                        .keyboardType(.numberPad)
+                                        .frame(width: 90, height: 46)
+                                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        .focused($rigaAttiva, equals: index)
+                                        .onSubmit {
+                                            if index + 1 < lavorazioni.count {
+                                                rigaAttiva = index + 1
+                                                withAnimation { proxy.scrollTo(index + 1, anchor: .center) }
+                                            } else {
+                                                rigaAttiva = nil
+                                            }
+                                        }
+                                }
+                                .padding(.horizontal, 12).padding(.vertical, 7)
+                                .id(index)
+                                Divider()
+                            }
                         }
                     }
-                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Modifica bolletta")
@@ -703,20 +749,61 @@ struct SelezionaDataModificaView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Annulla") { presentationMode.wrappedValue.dismiss() }
                 }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack(spacing: 14) {
+                        Button("CANCELLA") {
+                            mostraConfermaCancella = true
+                        }
+                        .foregroundColor(.red)
+
+                        Button("SALVA") { salva() }
+                            .font(.system(size: 17, weight: .bold))
+                    }
+                }
             }
-            .sheet(item: $bollettaSelezionata) { bolletta in
-                NuovaBollettaView(archivio: archivio, existing: bolletta)
-                    .navigationViewStyle(.stack)
+            .alert("Cancella bolletta", isPresented: $mostraConfermaCancella) {
+                Button("Cancella", role: .destructive) {
+                    archivio.eliminaBolletta(id: bolletta.id)
+                    onDeleted?()
+                    presentationMode.wrappedValue.dismiss()
+                }
+                Button("Annulla", role: .cancel) { }
+            } message: {
+                Text("Vuoi cancellare definitivamente questa bolletta?")
+            }
+            .sheet(isPresented: $mostraCambioData) {
+                VStack(spacing: 20) {
+                    Text("CAMBIA DATA").font(.title2)
+                    DatePicker("Data", selection: $data, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .labelsHidden()
+                    Button("OK") { mostraCambioData = false }
+                        .font(.system(size: 22, weight: .bold))
+                        .buttonStyle(.borderedProminent)
+                    Spacer()
+                }
+                .padding(22)
             }
         }
-        .navigationViewStyle(.stack)
     }
 
-    private func totalePezzi(_ bolletta: Bolletta) -> Int {
-        bolletta.lavorazioni.reduce(0) { $0 + (Int($1.quantita) ?? 0) }
+    private func salva() {
+        archivio.salvaBolletta(
+            Bolletta(
+                id: bolletta.id,
+                data: data,
+                lavorazioni: lavorazioni.map {
+                    Lavorazione(
+                        id: $0.id,
+                        nome: $0.nome,
+                        quantita: $0.quantita.isEmpty ? "0" : $0.quantita
+                    )
+                }
+            )
+        )
+        presentationMode.wrappedValue.dismiss()
     }
 }
-
 
 struct NessunaBollettaView: View {
     @Environment(\.presentationMode) private var presentationMode
@@ -738,37 +825,39 @@ struct DatiAnalizzatiView: View {
     @ObservedObject var archivio: Archivio
     @ObservedObject var analysisStore: PDFAnalysisStore
     @Environment(\.presentationMode) private var presentationMode
-    @State private var risultatoSelezionato: PDFAnalysisResult?
 
     var body: some View {
         NavigationView {
-            Group {
-                if analysisStore.results.isEmpty {
-                    VStack(spacing: 14) {
-                        Image(systemName: "doc.text.magnifyingglass").font(.system(size: 50)).foregroundColor(.purple)
-                        Text("Nessun PDF analizzato").font(.title2).fontWeight(.semibold)
-                        Text("Vai in PDF AZIENDA e premi CARICA sul prospetto ricevuto.")
-                            .multilineTextAlignment(.center).foregroundColor(.secondary)
-                            .padding(.horizontal, 25)
-                    }
+            VStack(spacing: 0) {
+                if analysisStore.analyses.isEmpty {
+                    Spacer()
+                    Text("Nessun PDF analizzato.").font(.title3)
+                    Text("Vai in PDF AZIENDA e premi CARICA.")
+                        .foregroundColor(.secondary).padding(.top, 4)
+                    Spacer()
                 } else {
-                    List(analysisStore.results) { result in
-                        Button { risultatoSelezionato = result } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "chart.bar.doc.horizontal").foregroundColor(.purple)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(result.fileName).font(.headline).lineLimit(2)
-                                    Text(result.date?.formatted(date: .numeric, time: .omitted) ?? "Data non trovata")
-                                        .font(.subheadline).foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                Text("\(result.rows.count) righe").foregroundColor(.secondary)
-                                Image(systemName: "chevron.right").foregroundColor(.secondary)
+                    List {
+                        Section("PROSPETTI AZIENDA") {
+                            ForEach(analysisStore.analyses) { analysis in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(analysis.fileName).font(.headline)
+                                    if let data = analysis.date {
+                                        Text(data.formatted(date: .numeric, time: .omitted))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    ForEach(analysis.rows) { row in
+                                        HStack {
+                                            Text(row.article).frame(maxWidth: .infinity, alignment: .leading)
+                                            Text("AZIENDA: \(row.quantity)")
+                                            if let mine = quantitaMia(row.article, data: analysis.date) {
+                                                Text("TU: \(mine)")
+                                            }
+                                        }.font(.subheadline)
+                                    }
+                                }.padding(.vertical, 6)
                             }
-                            .padding(.vertical, 8)
                         }
                     }
-                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Dati analizzati")
@@ -778,11 +867,21 @@ struct DatiAnalizzatiView: View {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
             }
-            .sheet(item: $risultatoSelezionato) { result in
-                PDFAnalysisDetailView(result: result, archivio: archivio)
-            }
         }
         .navigationViewStyle(.stack)
+    }
+
+    private func quantitaMia(_ articolo: String, data: Date?) -> Int? {
+        guard let data = data else { return nil }
+        let cal = Calendar.current
+        guard let bolletta = archivio.bollette.first(where: { cal.isDate($0.data, inSameDayAs: data) }) else { return nil }
+        return bolletta.lavorazioni.first(where: { normalizza($0.nome) == normalizza(articolo) }).flatMap { Int($0.quantita) }
+    }
+
+    private func normalizza(_ s: String) -> String {
+        s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
     }
 }
 
