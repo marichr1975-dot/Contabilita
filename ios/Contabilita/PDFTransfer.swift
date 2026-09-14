@@ -128,5 +128,6 @@ struct PDFLocaliView: View {
                 PDFViewer(url: file)
             }
         }
+        .navigationViewStyle(.stack)
     }
 }

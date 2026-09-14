@@ -1,62 +1,67 @@
 import SwiftUI
+import UIKit
 
 @main
 struct ContabilitaApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContabilitaRootView()
+        }
+    }
+}
+
+struct ContabilitaRootView: View {
     @StateObject private var archivio = Archivio()
     @StateObject private var pdfTransfer = PDFTransferStore()
     @Environment(\.scenePhase) private var scenePhase
-
-    private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     @State private var nuovaBolletta = false
     @State private var modificaBolletta = false
     @State private var mostraDatiAnalizzati = false
     @State private var mostraPDF = false
 
-    var body: some Scene {
-        WindowGroup {
-            Group {
-                if isPad {
-                    dashboardPad
-                } else {
-                    NavigationView {
-                        dashboardPhone
-                            .navigationTitle("Contabilità")
-                            .navigationBarTitleDisplayMode(.inline)
-                    }
-                    .navigationViewStyle(.stack)
-                }
-            }
-            .sheet(isPresented: $nuovaBolletta) {
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
+    var body: some View {
+        Group {
+            if isPad {
+                dashboardPad
+            } else {
                 NavigationView {
-                    NuovaBollettaView(archivio: archivio)
+                    dashboardPhone
+                        .navigationTitle("Contabilità")
+                        .navigationBarTitleDisplayMode(.inline)
                 }
                 .navigationViewStyle(.stack)
             }
-            .sheet(isPresented: $modificaBolletta) {
-                NavigationView {
-                    SelezionaDataModificaView(archivio: archivio)
-                }
+        }
+        .sheet(isPresented: $nuovaBolletta) {
+            NuovaBollettaView(archivio: archivio)
                 .navigationViewStyle(.stack)
-            }
-            .sheet(isPresented: $mostraDatiAnalizzati) {
-                NavigationView {
-                    DatiAnalizzatiView(archivio: archivio)
-                }
+        }
+        .sheet(isPresented: $modificaBolletta) {
+            SelezionaDataModificaView(archivio: archivio)
                 .navigationViewStyle(.stack)
-            }
-            .sheet(isPresented: $mostraPDF) {
-                NavigationView {
-                    PDFLocaliView(store: pdfTransfer)
-                }
+        }
+        .sheet(isPresented: $mostraDatiAnalizzati) {
+            DatiAnalizzatiView(archivio: archivio)
                 .navigationViewStyle(.stack)
-            }
-            .onAppear { pdfTransfer.importaDaCondividi() }
-            .onOpenURL { _ in pdfTransfer.importaDaCondividi() }
-            .onChange(of: scenePhase) { phase in
-                if phase == .active {
-                    pdfTransfer.importaDaCondividi()
-                }
+        }
+        .sheet(isPresented: $mostraPDF) {
+            PDFLocaliView(store: pdfTransfer)
+                .navigationViewStyle(.stack)
+        }
+        .onAppear {
+            pdfTransfer.importaDaCondividi()
+        }
+        .onOpenURL { _ in
+            pdfTransfer.importaDaCondividi()
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                pdfTransfer.importaDaCondividi()
             }
         }
     }
@@ -84,11 +89,11 @@ struct ContabilitaApp: App {
                             mostraDatiAnalizzati = true
                         }
                         dashboardButton(
-                            pdfTransfer.files.count > 0 ? "PDF AZIENDA  •  \(pdfTransfer.files.count)" : "IMPORTA PDF AZIENDA",
+                            pdfTransfer.files.isEmpty ? "IMPORTA PDF AZIENDA" : "PDF AZIENDA  •  \(pdfTransfer.files.count)",
                             icon: "doc.fill",
                             tint: .teal
                         ) {
-                            pdfTransfer.importaDaCondividi()
+                            pdfTransfer.ricarica()
                             mostraPDF = true
                         }
                     }
@@ -115,11 +120,11 @@ struct ContabilitaApp: App {
                     mostraDatiAnalizzati = true
                 }
                 dashboardButton(
-                    pdfTransfer.files.count > 0 ? "PDF AZIENDA  •  \(pdfTransfer.files.count)" : "IMPORTA PDF AZIENDA",
+                    pdfTransfer.files.isEmpty ? "IMPORTA PDF AZIENDA" : "PDF AZIENDA  •  \(pdfTransfer.files.count)",
                     icon: "doc.fill",
                     tint: .teal
                 ) {
-                    pdfTransfer.importaDaCondividi()
+                    pdfTransfer.ricarica()
                     mostraPDF = true
                 }
             }
