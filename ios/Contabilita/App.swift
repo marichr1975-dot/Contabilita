@@ -4,57 +4,48 @@ import SwiftUI
 struct ContabilitaApp: App {
     var body: some Scene {
         WindowGroup {
-            ContabilitaRootView()
-        }
-    }
-}
-
-struct ContabilitaRootView: View {
-    @StateObject private var archivio = Archivio()
-    @StateObject private var pdfTransfer = PDFTransferStore()
-    @Environment(\.scenePhase) private var scenePhase
-
-    @State private var nuovaBolletta = false
-    @State private var modificaBolletta = false
-    @State private var mostraDatiAnalizzati = false
-    @State private var mostraPDF = false
-
-    private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
-
-    var body: some View {
-        NavigationView {
             Group {
                 if isPad {
                     dashboardPad
                 } else {
-                    dashboardPhone
+                    NavigationView {
+                        dashboardPhone
+                            .navigationTitle("Contabilità")
+                            .navigationBarTitleDisplayMode(.inline)
+                    }
+                    .navigationViewStyle(.stack)
                 }
             }
-            .navigationTitle("Contabilità")
-            .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $nuovaBolletta) {
-                NuovaBollettaView(archivio: archivio)
-                    .navigationViewStyle(.stack)
+                NavigationView {
+                    NuovaBollettaView(archivio: archivio)
+                }
+                .navigationViewStyle(.stack)
             }
             .sheet(isPresented: $modificaBolletta) {
-                SelezionaDataModificaView(archivio: archivio)
-                    .navigationViewStyle(.stack)
+                NavigationView {
+                    SelezionaDataModificaView(archivio: archivio)
+                }
+                .navigationViewStyle(.stack)
             }
             .sheet(isPresented: $mostraDatiAnalizzati) {
-                DatiAnalizzatiView(archivio: archivio)
-                    .navigationViewStyle(.stack)
+                NavigationView {
+                    DatiAnalizzatiView(archivio: archivio)
+                }
+                .navigationViewStyle(.stack)
             }
             .sheet(isPresented: $mostraPDF) {
-                PDFLocaliView(store: pdfTransfer)
-                    .navigationViewStyle(.stack)
+                NavigationView {
+                    PDFLocaliView(store: pdfTransfer)
+                }
+                .navigationViewStyle(.stack)
             }
-        }
-        .navigationViewStyle(.stack)
-        .onAppear { pdfTransfer.importaDaCondividi() }
-        .onOpenURL { _ in pdfTransfer.importaDaCondividi() }
-        .onChange(of: scenePhase) { phase in
-            if phase == .active {
-                pdfTransfer.importaDaCondividi()
+            .onAppear { pdfTransfer.importaDaCondividi() }
+            .onOpenURL { _ in pdfTransfer.importaDaCondividi() }
+            .onChange(of: scenePhase) { phase in
+                if phase == .active {
+                    pdfTransfer.importaDaCondividi()
+                }
             }
         }
     }

@@ -36,7 +36,8 @@ targets:
         CFBundleVersion: "9"
         UILaunchScreen: {}
         CFBundleURLTypes:
-          - CFBundleURLSchemes:
+          - CFBundleURLName: com.gotrail.contabilita.import
+            CFBundleURLSchemes:
               - contabilita
 
   ContabilitaShare:

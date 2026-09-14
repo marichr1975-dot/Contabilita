@@ -99,7 +99,7 @@ final class ShareViewController: UIViewController {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.saved = true
-            self.apriContabilita()
+            self.mostraPulsanteApri()
         }
     }
 
