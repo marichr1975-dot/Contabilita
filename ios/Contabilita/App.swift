@@ -3,7 +3,7 @@ import SwiftUI
 @main
 struct ContabilitaApp: App {
     @StateObject private var archivio = Archivio()
-    @StateObject private var pdfTransfer = PDFTransfer()
+    @StateObject private var pdfTransfer = PDFTransferStore()
     @Environment(\.scenePhase) private var scenePhase
 
     private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
