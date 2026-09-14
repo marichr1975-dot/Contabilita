@@ -514,6 +514,7 @@ struct ModificaBollettaView: View {
                         }
                     }
                 }
+            }
 
             .navigationTitle("Modifica bolletta")
             .navigationBarTitleDisplayMode(.inline)
