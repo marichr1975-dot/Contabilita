@@ -97,58 +97,49 @@ final class Archivio: ObservableObject {
 
 struct ContentView: View {
     @StateObject private var archivio = Archivio()
+    @Environment(\.scenePhase) private var scenePhase
     @State private var nuovaBolletta = false
     @State private var modificaBolletta = false
     @State private var mostraDatiAnalizzati = false
+    @State private var mostraPDF = false
+    @State private var pdfImportati = 0
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 18) {
-                Spacer()
+            VStack(spacing: 16) {
+                Spacer(minLength: 8)
 
                 Image(systemName: "bag.fill")
-                    .font(.system(size: 58))
+                    .font(.system(size: 52))
+                    .foregroundColor(.orange)
 
                 Text("Contabilità")
                     .font(.largeTitle)
-                    
+                    .fontWeight(.semibold)
 
-                Button {
+                homeButton(title: "NUOVA BOLLETTA", icon: "plus.circle.fill", tint: .green) {
                     nuovaBolletta = true
-                } label: {
-                    Text("NUOVA BOLLETTA")
-                        .font(.title2)
-                        
-                        .frame(maxWidth: .infinity)
-                        .padding()
                 }
-                .buttonStyle(.borderedProminent)
 
-                Button {
+                homeButton(title: "MODIFICA BOLLETTA", icon: "pencil.circle.fill", tint: .blue) {
                     modificaBolletta = true
-                } label: {
-                    Text("MODIFICA BOLLETTA")
-                        .font(.title2)
-                        
-                        .frame(maxWidth: .infinity)
-                        .padding()
                 }
-                .buttonStyle(.bordered)
 
-                Button {
+                homeButton(title: "DATI ANALIZZATI", icon: "chart.bar.fill", tint: .purple) {
                     mostraDatiAnalizzati = true
-                } label: {
-                    Text("DATI ANALIZZATI")
-                        .font(.title2)
-                        
-                        .frame(maxWidth: .infinity)
-                        .padding()
                 }
-                .buttonStyle(.bordered)
+
+                homeButton(
+                    title: pdfImportati > 0 ? "PDF AZIENDA  •  \(pdfImportati)" : "IMPORTA PDF AZIENDA",
+                    icon: "doc.fill",
+                    tint: .teal
+                ) {
+                    mostraPDF = true
+                }
 
                 Spacer()
             }
-            .padding(30)
+            .padding(28)
             .navigationTitle("Contabilità")
             .sheet(isPresented: $nuovaBolletta) {
                 NuovaBollettaView(archivio: archivio)
@@ -159,7 +150,124 @@ struct ContentView: View {
             .sheet(isPresented: $mostraDatiAnalizzati) {
                 DatiAnalizzatiView(archivio: archivio)
             }
+            .sheet(isPresented: $mostraPDF) {
+                PDFImportatiView()
+            }
+            .onAppear { aggiornaPDF() }
+            .onChange(of: scenePhase) { phase in
+                if phase == .active { aggiornaPDF() }
+            }
         }
+    }
+
+    private func homeButton(title: String, icon: String, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 27))
+                    .foregroundColor(tint)
+
+                Text(title)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .background(tint.opacity(0.10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(tint.opacity(0.22), lineWidth: 1)
+            )
+            .cornerRadius(14)
+        }
+    }
+
+    private func aggiornaPDF() {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.com.gotrail.contabilita"
+        ) else {
+            pdfImportati = 0
+            return
+        }
+        let folder = container.appendingPathComponent("PDFImportati", isDirectory: true)
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        pdfImportati = files.filter { $0.pathExtension.lowercased() == "pdf" }.count
+    }
+}
+
+struct PDFImportatiView: View {
+    @Environment(\.presentationMode) private var presentationMode
+    @State private var files: [URL] = []
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 18) {
+                if files.isEmpty {
+                    Spacer()
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 48))
+                        .foregroundColor(.teal)
+                    Text("Nessun PDF ricevuto")
+                        .font(.title2)
+                    Text("Da WhatsApp: Condividi → Contabilità")
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                } else {
+                    Text("PDF RICEVUTI")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .padding(.top, 8)
+
+                    List(files, id: \.self) { file in
+                        HStack(spacing: 12) {
+                            Image(systemName: "doc.fill")
+                                .foregroundColor(.teal)
+                            Text(file.lastPathComponent)
+                                .font(.body)
+                                .lineLimit(2)
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .padding(18)
+            .navigationTitle("PDF azienda")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
+                }
+            }
+            .onAppear { caricaFiles() }
+        }
+    }
+
+    private func caricaFiles() {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.com.gotrail.contabilita"
+        ) else {
+            files = []
+            return
+        }
+        let folder = container.appendingPathComponent("PDFImportati", isDirectory: true)
+        files = ((try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: nil
+        )) ?? []).filter { $0.pathExtension.lowercased() == "pdf" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 }
 

@@ -45,5 +45,5 @@ jobs:
       - name: Carica IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Contabilita-IPA
+          name: Contabilita-V9-IPA
           path: Contabilita-unsigned.ipa
