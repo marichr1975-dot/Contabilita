@@ -77,6 +77,11 @@ final class Archivio: ObservableObject {
         salvaDati()
     }
 
+    func eliminaBolletta(id: UUID) {
+        bollette.removeAll { $0.id == id }
+        salvaDati()
+    }
+
     var ultimaBolletta: Bolletta? {
         bollette.sorted { $0.data > $1.data }.first
     }
@@ -434,7 +439,7 @@ struct SelezionaDataModificaView: View {
     @Environment(\.presentationMode) private var presentationMode
 
     @State private var data = Date()
-    @State private var bollettaTrovata: Bolletta?
+    @State private var bolletteTrovate: [Bolletta] = []
     @State private var mostraErrore = false
 
     var body: some View {
@@ -448,7 +453,7 @@ struct SelezionaDataModificaView: View {
                     .labelsHidden()
 
                 Button {
-                    cercaBolletta()
+                    cercaBollette()
                 } label: {
                     Text("CERCA")
                         .font(.system(size: 22, weight: .bold))
@@ -456,6 +461,32 @@ struct SelezionaDataModificaView: View {
                         .padding()
                 }
                 .buttonStyle(.borderedProminent)
+
+                if !bolletteTrovate.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(bolletteTrovate.count == 1 ? "BOLLETTA TROVATA" : "BOLLETTE TROVATE")
+                            .font(.headline)
+
+                        List {
+                            ForEach(Array(bolletteTrovate.enumerated()), id: \.element.id) { indice, bolletta in
+                                Button {
+                                    apri(bolletta)
+                                } label: {
+                                    HStack {
+                                        Text("BOLLETTA \(indice + 1)")
+                                            .font(.title3)
+                                        Spacer()
+                                        Text("\(totalePezzi(bolletta)) pezzi")
+                                            .font(.headline)
+                                    }
+                                    .padding(.vertical, 8)
+                                }
+                            }
+                        }
+                        .listStyle(.plain)
+                    }
+                    .padding(.horizontal, 8)
+                }
 
                 Spacer()
             }
@@ -472,20 +503,37 @@ struct SelezionaDataModificaView: View {
             } message: {
                 Text("In questa data non ci sono bollette.")
             }
-            .sheet(item: $bollettaTrovata) { bolletta in
-                ModificaBollettaView(archivio: archivio, bolletta: bolletta)
-            }
         }
     }
 
-    private func cercaBolletta() {
+    private func cercaBollette() {
         let cal = Calendar.current
-        if let trovata = archivio.bollette.first(where: { cal.isDate($0.data, inSameDayAs: data) }) {
-            bollettaTrovata = trovata
-        } else {
-            bollettaTrovata = nil
+        bolletteTrovate = archivio.bollette
+            .filter { cal.isDate($0.data, inSameDayAs: data) }
+            .sorted { $0.id.uuidString < $1.id.uuidString }
+
+        if bolletteTrovate.isEmpty {
             mostraErrore = true
         }
+    }
+
+    private func apri(_ bolletta: Bolletta) {
+        let view = ModificaBollettaView(archivio: archivio, bolletta: bolletta)
+        let host = UIHostingController(rootView: view)
+        host.modalPresentationStyle = .pageSheet
+
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let root = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+            var presenter = root
+            while let presented = presenter.presentedViewController {
+                presenter = presented
+            }
+            presenter.present(host, animated: true)
+        }
+    }
+
+    private func totalePezzi(_ bolletta: Bolletta) -> Int {
+        bolletta.lavorazioni.reduce(0) { $0 + (Int($1.quantita) ?? 0) }
     }
 }
 
@@ -497,6 +545,7 @@ struct ModificaBollettaView: View {
     @State private var data: Date
     @State private var mostraCambioData = false
     @State private var lavorazioni: [Lavorazione]
+    @State private var mostraConfermaCancella = false
     @FocusState private var rigaAttiva: Int?
 
     init(archivio: Archivio, bolletta: Bolletta) {
@@ -514,7 +563,8 @@ struct ModificaBollettaView: View {
                         Text("BOLLETTA DEL")
                             .font(.caption)
                         Text(data.formatted(date: .numeric, time: .omitted))
-                            .font(.title3).foregroundColor(.blue)
+                            .font(.title3)
+                            .foregroundColor(.blue)
                     }
 
                     Spacer()
@@ -570,8 +620,7 @@ struct ModificaBollettaView: View {
                         }
                     }
                 }
-                }
-
+            }
             .navigationTitle("Modifica bolletta")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -579,9 +628,25 @@ struct ModificaBollettaView: View {
                     Button("Annulla") { presentationMode.wrappedValue.dismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("SALVA") { salva() }
-                        .font(.system(size: 17, weight: .bold))
+                    HStack(spacing: 14) {
+                        Button("CANCELLA") {
+                            mostraConfermaCancella = true
+                        }
+                        .foregroundColor(.red)
+
+                        Button("SALVA") { salva() }
+                            .font(.system(size: 17, weight: .bold))
+                    }
                 }
+            }
+            .alert("Cancella bolletta", isPresented: $mostraConfermaCancella) {
+                Button("Cancella", role: .destructive) {
+                    archivio.eliminaBolletta(id: bolletta.id)
+                    presentationMode.wrappedValue.dismiss()
+                }
+                Button("Annulla", role: .cancel) { }
+            } message: {
+                Text("Vuoi cancellare definitivamente questa bolletta?")
             }
             .sheet(isPresented: $mostraCambioData) {
                 VStack(spacing: 20) {
