@@ -20,7 +20,6 @@ struct ContabilitaRootView: View {
     @State private var modificaBolletta = false
     @State private var mostraDatiAnalizzati = false
     @State private var mostraPDF = false
-    @State private var analisiDaMostrare: PDFAnalysis?
 
     private var isPad: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
@@ -52,18 +51,8 @@ struct ContabilitaRootView: View {
                 .navigationViewStyle(.stack)
         }
         .sheet(isPresented: $mostraPDF) {
-            PDFLocaliView(store: pdfTransfer, analysisStore: analysisStore)
+            PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore, archivio: archivio)
                 .navigationViewStyle(.stack)
-        }
-        .sheet(item: $analisiDaMostrare) { analysis in
-            PDFAnalysisDetailView(analysis: analysis)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .contabilitaMostraAnalisi)) { note in
-            if let analysis = note.object as? PDFAnalysis {
-                analisiDaMostrare = analysis
-                mostraPDF = false
-                mostraDatiAnalizzati = false
-            }
         }
         .onAppear {
             pdfTransfer.importaDaCondividi()

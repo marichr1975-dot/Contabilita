@@ -18,169 +18,201 @@ struct PDFAnalysisRow: Identifiable, Codable {
     }
 }
 
-struct PDFAnalysis: Identifiable, Codable {
+struct PDFAnalysisResult: Identifiable, Codable {
     let id: UUID
     var fileName: String
-    var dataBolletta: Date?
+    var date: Date?
     var rows: [PDFAnalysisRow]
-    var rawText: String
     var analyzedAt: Date
 
-    init(id: UUID = UUID(), fileName: String, dataBolletta: Date? = nil, rows: [PDFAnalysisRow], rawText: String, analyzedAt: Date = Date()) {
+    init(id: UUID = UUID(), fileName: String, date: Date?, rows: [PDFAnalysisRow], analyzedAt: Date = Date()) {
         self.id = id
         self.fileName = fileName
-        self.dataBolletta = dataBolletta
+        self.date = date
         self.rows = rows
-        self.rawText = rawText
         self.analyzedAt = analyzedAt
     }
 }
 
 final class PDFAnalysisStore: ObservableObject {
-    @Published private(set) var analyses: [PDFAnalysis] = []
-    private let key = "contabilita_pdf_analyses"
+    @Published private(set) var results: [PDFAnalysisResult] = []
+    private let key = "contabilita_pdf_analysis_results"
 
-    init() { carica() }
+    init() { load() }
 
-    func carica() {
+    func load() {
         guard let data = UserDefaults.standard.data(forKey: key),
-              let value = try? JSONDecoder().decode([PDFAnalysis].self, from: data) else { return }
-        analyses = value
+              let value = try? JSONDecoder().decode([PDFAnalysisResult].self, from: data) else { return }
+        results = value
     }
 
-    func analisiPerFile(_ url: URL) -> PDFAnalysis? {
-        analyses.first { $0.fileName == url.lastPathComponent }
-    }
-
-    @discardableResult
-    func analizza(_ url: URL) -> PDFAnalysis? {
-        guard let document = PDFDocument(url: url) else { return nil }
-        var text = ""
-        for index in 0..<document.pageCount {
-            if let page = document.page(at: index), let pageText = page.string {
-                text += pageText + "\n"
-            }
+    func save(_ result: PDFAnalysisResult) {
+        if let index = results.firstIndex(where: { $0.fileName == result.fileName }) {
+            results[index] = result
+        } else {
+            results.insert(result, at: 0)
         }
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-
-        let date = Self.extractDate(from: text)
-        let rows = Self.extractRows(from: text)
-        let result = PDFAnalysis(fileName: url.lastPathComponent, dataBolletta: date, rows: rows, rawText: text)
-        analyses.removeAll { $0.fileName == result.fileName }
-        analyses.insert(result, at: 0)
-        if let data = try? JSONEncoder().encode(analyses) {
+        if let data = try? JSONEncoder().encode(results) {
             UserDefaults.standard.set(data, forKey: key)
         }
-        return result
     }
+}
 
-    private static func normalizedLines(_ text: String) -> [String] {
-        text.replacingOccurrences(of: "\r", with: "\n")
-            .components(separatedBy: .newlines)
-            .map { $0.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-    }
+enum PDFAnalyzer {
+    static func analyze(url: URL) -> PDFAnalysisResult? {
+        guard let document = PDFDocument(url: url) else { return nil }
+        let text = (0..<document.pageCount).compactMap { document.page(at: $0)?.string }.joined(separator: "\n")
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
 
-    private static func extractDate(from text: String) -> Date? {
-        let patterns = [
-            #"\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b"#,
-            #"\b(\d{4})[./-](\d{1,2})[./-](\d{1,2})\b"#
-        ]
-        for pattern in patterns {
-            if let regex = try? NSRegularExpression(pattern: pattern),
-               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
-                let values = (1...3).compactMap { i -> Int? in
-                    guard let r = Range(match.range(at: i), in: text) else { return nil }
-                    return Int(text[r])
-                }
-                if values.count == 3 {
-                    let d: Int, m: Int, y: Int
-                    if values[0] > 31 { y = values[0]; m = values[1]; d = values[2] }
-                    else { d = values[0]; m = values[1]; y = values[2] < 100 ? 2000 + values[2] : values[2] }
-                    var comps = DateComponents(); comps.day = d; comps.month = m; comps.year = y
-                    if let date = Calendar.current.date(from: comps) { return date }
-                }
+        let date = findDate(in: text)
+        var rows: [PDFAnalysisRow] = []
+        let lines = text.components(separatedBy: .newlines)
+
+        for rawLine in lines {
+            let line = rawLine.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty else { continue }
+            guard let numbers = numbers(in: line), !numbers.isEmpty else { continue }
+            guard let quantity = numbers.last(where: { $0.rounded() == $0 && $0 >= 0 && $0 <= 100000 }) else { continue }
+            guard quantity > 0 || numbers.count >= 2 else { continue }
+
+            let article = articlePart(from: line, numbers: numbers)
+            guard article.count >= 2 else { continue }
+            let upper = article.uppercased()
+            let ignored = ["TOTALE", "TOTALI", "PREZZO", "QUANTITA", "QUANTITÀ", "IMPORTO", "DATA", "ARTICOLO"]
+            guard !ignored.contains(where: { upper == $0 || upper.hasPrefix($0 + " ") }) else { continue }
+
+            let reversed = numbers.reversed().map { $0 }
+            var prezzo: Double?
+            var totale: Double?
+            if reversed.count >= 3 {
+                totale = reversed[0]
+                prezzo = reversed[1]
+            } else if reversed.count == 2 {
+                totale = reversed[0]
+                prezzo = reversed[1]
             }
+            rows.append(PDFAnalysisRow(articolo: article, quantita: Int(quantity), prezzoUnitario: prezzo, totale: totale))
         }
-        return nil
+
+        // Evita righe duplicate generate da PDF con testo ripetuto nell'intestazione.
+        var unique: [String: PDFAnalysisRow] = [:]
+        for row in rows {
+            let key = normalize(row.articolo)
+            if key.isEmpty { continue }
+            unique[key] = row
+        }
+        rows = Array(unique.values).sorted { $0.articolo.localizedCaseInsensitiveCompare($1.articolo) == .orderedAscending }
+
+        guard !rows.isEmpty else { return nil }
+        return PDFAnalysisResult(fileName: url.lastPathComponent, date: date, rows: rows)
     }
 
-    private static func number(_ value: String) -> Double? {
-        var s = value.replacingOccurrences(of: "€", with: "").replacingOccurrences(of: "EUR", with: "", options: .caseInsensitive)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if s.contains(",") && s.contains(".") { s = s.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".") }
-        else { s = s.replacingOccurrences(of: ",", with: ".") }
-        return Double(s)
+    private static func numbers(in line: String) -> [Double]? {
+        let pattern = #"(?<![A-Za-z])\d{1,7}(?:[\.,]\d{1,2})?(?![A-Za-z])"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let ns = line as NSString
+        let matches = regex.matches(in: line, range: NSRange(location: 0, length: ns.length))
+        let values = matches.compactMap { match -> Double? in
+            let value = ns.substring(with: match.range).replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
+            return Double(value)
+        }
+        return values.isEmpty ? nil : values
     }
 
-    private static func extractRows(from text: String) -> [PDFAnalysisRow] {
-        var result: [PDFAnalysisRow] = []
-        let lines = normalizedLines(text)
-        let skip = ["totale", "data", "articolo", "quantità", "quantita", "prezzo", "unitario", "prospetto", "azienda"]
-
-        for line in lines {
-            let upper = line.uppercased()
-            if skip.contains(where: { upper == $0 || upper.hasPrefix($0 + " ") }) { continue }
-            let tokens = line.components(separatedBy: " ")
-            guard tokens.count >= 2 else { continue }
-
-            let numeric = tokens.enumerated().compactMap { idx, token -> (Int, Double)? in
-                guard let value = number(token) else { return nil }
-                return (idx, value)
-            }
-            guard let first = numeric.first else { continue }
-
-            // The first integer-looking value is treated as quantity; trailing monetary values are price/total.
-            let quantityIndex = first.0
-            let quantity = Int(first.1.rounded())
-            guard quantity >= 0, quantityIndex < tokens.count - 1 else { continue }
-
-            let article = tokens[0...quantityIndex-1].joined(separator: " ").trimmingCharacters(in: .whitespaces)
-            guard !article.isEmpty, article.count >= 2 else { continue }
-            let money = numeric.dropFirst().map { $0.1 }
-            let price = money.first
-            let total = money.count > 1 ? money.last : nil
-            result.append(PDFAnalysisRow(articolo: article, quantita: quantity, prezzoUnitario: price, totale: total))
+    private static func articlePart(from line: String, numbers: [Double]) -> String {
+        let pattern = #"\s+\d{1,7}(?:[\.,]\d{1,2})?\s*$"#
+        var result = line.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        // Rimuove fino a due numeri finali (prezzo/totale), lasciando il nome dell'articolo.
+        for _ in 0..<2 {
+            result = result.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
         }
-        return result
+        return result.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+    }
+
+    private static func findDate(in text: String) -> Date? {
+        let pattern = #"\b(\d{1,2})[\./-](\d{1,2})[\./-](\d{2,4})\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        guard let match = regex.firstMatch(in: text, range: range) else { return nil }
+        let ns = text as NSString
+        guard let d = Int(ns.substring(with: match.range(at: 1))),
+              let m = Int(ns.substring(with: match.range(at: 2))),
+              var y = Int(ns.substring(with: match.range(at: 3))) else { return nil }
+        if y < 100 { y += 2000 }
+        var c = DateComponents(); c.day = d; c.month = m; c.year = y
+        return Calendar.current.date(from: c)
+    }
+
+    static func normalize(_ value: String) -> String {
+        value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .replacingOccurrences(of: "[^a-z0-9]", with: "", options: .regularExpression)
     }
 }
 
 struct PDFAnalysisDetailView: View {
-    let analysis: PDFAnalysis
+    let result: PDFAnalysisResult
+    @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
+
+    private var matchingBolletta: Bolletta? {
+        guard let date = result.date else { return nil }
+        return archivio.bollette.first { Calendar.current.isDate($0.data, inSameDayAs: date) }
+    }
 
     var body: some View {
         NavigationView {
-            List {
-                if let date = analysis.dataBolletta {
-                    HStack { Text("Data"); Spacer(); Text(date.formatted(date: .numeric, time: .omitted)).fontWeight(.semibold) }
+            VStack(spacing: 0) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("PDF ANALIZZATO").font(.caption).foregroundColor(.secondary)
+                        Text(result.fileName).font(.headline).lineLimit(2)
+                    }
+                    Spacer()
+                    Text(result.date?.formatted(date: .numeric, time: .omitted) ?? "Data non trovata")
+                        .foregroundColor(.blue)
                 }
-                Section("RIGHE RICONOSCIUTE") {
-                    if analysis.rows.isEmpty {
-                        Text("Nessuna riga riconosciuta automaticamente. Il PDF è stato letto ma il formato non consente di identificare con certezza le colonne.")
-                            .foregroundColor(.secondary)
-                    } else {
-                        ForEach(analysis.rows) { row in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(row.articolo).font(.headline)
-                                HStack {
-                                    Text("Quantità: \(row.quantita)")
-                                    Spacer()
-                                    if let p = row.prezzoUnitario { Text(String(format: "€ %.2f", p)) }
-                                    if let t = row.totale { Text(String(format: "€ %.2f", t)) }
-                                }.font(.subheadline).foregroundColor(.secondary)
-                            }.padding(.vertical, 4)
+                .padding(16)
+
+                if matchingBolletta == nil {
+                    Text("Nessuna bolletta caricata da te con la stessa data.")
+                        .font(.headline)
+                        .foregroundColor(.orange)
+                        .multilineTextAlignment(.center)
+                        .padding()
+                }
+
+                List(result.rows) { row in
+                    let mine = matchingBolletta?.lavorazioni.first(where: { PDFAnalyzer.normalize($0.nome) == PDFAnalyzer.normalize(row.articolo) })
+                    let mineQty = Int(mine?.quantita ?? "") ?? 0
+                    let diff = row.quantita - mineQty
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(row.articolo).font(.headline)
+                            if let price = row.prezzoUnitario {
+                                Text(String(format: "€ %.2f cad.  •  Totale € %.2f", price, row.totale ?? price * Double(row.quantita)))
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 3) {
+                            Text("Tu: \(mineQty)")
+                            Text("Azienda: \(row.quantita)")
+                            Text(diff == 0 ? "✓ UGUALE" : "Differenza: \(diff > 0 ? "+" : "")\(diff)")
+                                .foregroundColor(diff == 0 ? .green : .red)
+                                .fontWeight(.bold)
                         }
                     }
-                }
-                Section("TESTO LETTO DAL PDF") {
-                    Text(analysis.rawText).font(.footnote).textSelection(.enabled)
+                    .padding(.vertical, 6)
                 }
             }
-            .navigationTitle("Dati analizzati")
+            .navigationTitle("Analisi e confronto")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .navigationBarLeading) { Button("Chiudi") { presentationMode.wrappedValue.dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
+                }
+            }
         }
         .navigationViewStyle(.stack)
     }
