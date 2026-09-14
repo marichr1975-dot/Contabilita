@@ -4,7 +4,7 @@ import SwiftUI
 struct ContabilitaApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            AdaptiveRootView()
         }
     }
 }
