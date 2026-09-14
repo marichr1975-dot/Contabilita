@@ -13,6 +13,7 @@ struct ContabilitaApp: App {
 struct ContabilitaRootView: View {
     @StateObject private var archivio = Archivio()
     @StateObject private var pdfTransfer = PDFTransferStore()
+    @StateObject private var analysisStore = PDFAnalysisStore()
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var nuovaBolletta = false
@@ -41,16 +42,16 @@ struct ContabilitaRootView: View {
             NuovaBollettaView(archivio: archivio)
                 .navigationViewStyle(.stack)
         }
-        .sheet(isPresented: $modificaBolletta) {
+        .fullScreenCover(isPresented: $modificaBolletta) {
             SelezionaDataModificaView(archivio: archivio)
                 .navigationViewStyle(.stack)
         }
         .sheet(isPresented: $mostraDatiAnalizzati) {
-            DatiAnalizzatiView(archivio: archivio)
+            DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore)
                 .navigationViewStyle(.stack)
         }
         .sheet(isPresented: $mostraPDF) {
-            PDFLocaliView(store: pdfTransfer)
+            PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore)
                 .navigationViewStyle(.stack)
         }
         .onAppear {
