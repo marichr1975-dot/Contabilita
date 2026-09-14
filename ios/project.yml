@@ -23,6 +23,7 @@ targets:
         INFOPLIST_KEY_LSRequiresIPhoneOS: true
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_ENTITLEMENTS: Contabilita/Contabilita.entitlements
         SWIFT_VERSION: "5.0"
     dependencies:
       - target: ContabilitaShare
@@ -31,8 +32,8 @@ targets:
       path: Contabilita/Info.plist
       properties:
         CFBundleDisplayName: Contabilità
-        CFBundleShortVersionString: "1.2"
-        CFBundleVersion: "10"
+        CFBundleShortVersionString: "1.1"
+        CFBundleVersion: "9"
         UILaunchScreen: {}
         CFBundleURLTypes:
           - CFBundleURLName: com.gotrail.contabilita.import
@@ -52,14 +53,15 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_ENTITLEMENTS: ContabilitaShare/ContabilitaShare.entitlements
         SWIFT_VERSION: "5.0"
     info:
       path: ContabilitaShare/Info.plist
       properties:
         CFBundleDisplayName: Contabilità
         CFBundlePackageType: XPC!
-        CFBundleShortVersionString: "1.2"
-        CFBundleVersion: "10"
+        CFBundleShortVersionString: "1.1"
+        CFBundleVersion: "9"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController

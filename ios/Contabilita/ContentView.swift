@@ -102,8 +102,6 @@ final class Archivio: ObservableObject {
 
 struct ContentView: View {
     @StateObject private var archivio = Archivio()
-    @StateObject private var analysisStore = PDFAnalysisStore()
-    @StateObject private var pdfTransfer = PDFTransferStore()
     @Environment(\.scenePhase) private var scenePhase
     @State private var nuovaBolletta = false
     @State private var modificaBolletta = false
@@ -155,17 +153,16 @@ struct ContentView: View {
                 SelezionaDataModificaView(archivio: archivio)
             }
             .sheet(isPresented: $mostraDatiAnalizzati) {
-                DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore)
+                DatiAnalizzatiView(archivio: archivio)
             }
             .sheet(isPresented: $mostraPDF) {
-                PDFImportatiView(store: PDFTransferStore(), analysisStore: analysisStore)
+                PDFImportatiView()
             }
-            .onAppear { pdfTransfer.importaDaCondividi(); pdfImportati = pdfTransfer.files.count }
+            .onAppear { aggiornaPDF() }
             .onChange(of: scenePhase) { phase in
-                if phase == .active { pdfTransfer.importaDaCondividi(); pdfImportati = pdfTransfer.files.count }
+                if phase == .active { aggiornaPDF() }
             }
         }
-        .navigationViewStyle(.stack)
     }
 
     private func homeButton(title: String, icon: String, tint: Color, action: @escaping () -> Void) -> some View {
@@ -199,29 +196,37 @@ struct ContentView: View {
     }
 
     private func aggiornaPDF() {
-        pdfTransfer.ricarica()
-        pdfImportati = pdfTransfer.files.count
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.com.gotrail.contabilita"
+        ) else {
+            pdfImportati = 0
+            return
+        }
+        let folder = container.appendingPathComponent("PDFImportati", isDirectory: true)
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        pdfImportati = files.filter { $0.pathExtension.lowercased() == "pdf" }.count
     }
-
 }
 
 struct PDFImportatiView: View {
-    @ObservedObject var store: PDFTransferStore
-    @ObservedObject var analysisStore: PDFAnalysisStore
     @Environment(\.presentationMode) private var presentationMode
-    @State private var pdfDaMostrare: URL?
+    @State private var files: [URL] = []
+    @State private var pdfDaMostrare: URL? = nil
 
     var body: some View {
         NavigationView {
             VStack(spacing: 18) {
-                if store.files.isEmpty {
+                if files.isEmpty {
                     Spacer()
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 48))
                         .foregroundColor(.teal)
                     Text("Nessun PDF ricevuto")
                         .font(.title2)
-                    Text("Da WhatsApp o File: Condividi → Contabilità")
+                    Text("Da WhatsApp: Condividi → Contabilità")
                         .multilineTextAlignment(.center)
                         .foregroundColor(.secondary)
                     Spacer()
@@ -231,26 +236,15 @@ struct PDFImportatiView: View {
                         .fontWeight(.semibold)
                         .padding(.top, 8)
 
-                    List(store.files, id: \.self) { file in
-                        Button { pdfDaMostrare = file } label: {
+                    List(files, id: \.self) { file in
+                        Button(action: { pdfDaMostrare = file }) {
                             HStack(spacing: 12) {
                                 Image(systemName: "doc.fill")
                                     .foregroundColor(.teal)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(file.lastPathComponent)
-                                        .font(.body)
-                                        .lineLimit(2)
-                                        .foregroundColor(.primary)
-                                    if let analisi = analysisStore.analisiPer(fileName: file.lastPathComponent) {
-                                        Text("Analizzato • \(analisi.righe.count) righe")
-                                            .font(.caption)
-                                            .foregroundColor(.green)
-                                    } else {
-                                        Text("Da analizzare")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
+                                Text(file.lastPathComponent)
+                                    .font(.body)
+                                    .lineLimit(2)
+                                    .foregroundColor(.primary)
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .foregroundColor(.secondary)
@@ -269,12 +263,26 @@ struct PDFImportatiView: View {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
             }
-            .onAppear { store.importaDaCondividi(); store.ricarica() }
+            .onAppear { caricaFiles() }
             .sheet(item: $pdfDaMostrare) { file in
-                PDFAnalisiView(file: file, store: analysisStore)
+                PDFViewer(url: file)
             }
         }
-        .navigationViewStyle(.stack)
+    }
+
+    private func caricaFiles() {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.com.gotrail.contabilita"
+        ) else {
+            files = []
+            return
+        }
+        let folder = container.appendingPathComponent("PDFImportati", isDirectory: true)
+        files = ((try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: nil
+        )) ?? []).filter { $0.pathExtension.lowercased() == "pdf" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 }
 
@@ -294,7 +302,6 @@ struct PDFViewer: View {
                     }
                 }
         }
-        .navigationViewStyle(.stack)
     }
 }
 
@@ -595,7 +602,6 @@ struct SelezionaDataModificaView: View {
     @State private var data = Date()
     @State private var bolletteTrovate: [Bolletta] = []
     @State private var mostraErrore = false
-    @State private var bollettaDaModificare: Bolletta?
 
     var body: some View {
         NavigationView {
@@ -667,13 +673,6 @@ struct SelezionaDataModificaView: View {
                 Text("In questa data non ci sono bollette.")
             }
         }
-        .navigationViewStyle(.stack)
-        .fullScreenCover(item: $bollettaDaModificare) { bolletta in
-            ModificaBollettaView(archivio: archivio, bolletta: bolletta, onDeleted: {
-                bolletteTrovate.removeAll { $0.id == bolletta.id }
-            })
-            .navigationViewStyle(.stack)
-        }
     }
 
     private func cercaBollette() {
@@ -688,7 +687,20 @@ struct SelezionaDataModificaView: View {
     }
 
     private func apri(_ bolletta: Bolletta) {
-        bollettaDaModificare = bolletta
+        let view = ModificaBollettaView(archivio: archivio, bolletta: bolletta, onDeleted: {
+            bolletteTrovate.removeAll { $0.id == bolletta.id }
+        })
+        let host = UIHostingController(rootView: view)
+        host.modalPresentationStyle = .pageSheet
+
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let root = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController {
+            var presenter = root
+            while let presented = presenter.presentedViewController {
+                presenter = presented
+            }
+            presenter.present(host, animated: true)
+        }
     }
 
     private func totalePezzi(_ bolletta: Bolletta) -> Int {
@@ -824,7 +836,6 @@ struct ModificaBollettaView: View {
                 .padding(22)
             }
         }
-        .navigationViewStyle(.stack)
     }
 
     private func salva() {
@@ -858,69 +869,55 @@ struct NessunaBollettaView: View {
             }
             .padding()
         }
-        .navigationViewStyle(.stack)
     }
 }
 
 struct DatiAnalizzatiView: View {
     @ObservedObject var archivio: Archivio
-    @ObservedObject var analysisStore: PDFAnalysisStore
     @Environment(\.presentationMode) private var presentationMode
+
+    // Per ora vengono mostrate le date che hanno bollette salvate.
+    // La lettura del prospetto aziendale e il calcolo delle incongruenze
+    // verranno collegati alla condivisione/importazione del PDF nel prossimo passaggio.
+    private var dateDisponibili: [Bolletta] {
+        archivio.bollette.sorted { $0.data > $1.data }
+    }
 
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                if analysisStore.analisi.isEmpty {
-                    Spacer()
-                    Image(systemName: "chart.bar.xaxis")
-                        .font(.system(size: 48))
-                        .foregroundColor(.purple)
-                    Text("Nessun PDF analizzato")
+                HStack {
+                    Text("INCONGRUENZE")
                         .font(.title2)
-                        .fontWeight(.semibold)
-                    Text("Apri PDF AZIENDA, seleziona il prospetto e premi CARICA E ANALIZZA.")
+                        
+                    Spacer()
+                }
+                .padding(18)
+
+                if dateDisponibili.isEmpty {
+                    Spacer()
+                    Text("Nessuna bolletta analizzata.")
+                        .font(.title3)
+                    Text("Quando arriverà il prospetto dell'azienda, qui saranno indicate le date con differenze.")
+                        .font(.body)
                         .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
                         .padding(.horizontal, 30)
                     Spacer()
                 } else {
                     List {
-                        Section(header: Text("PROSPETTI AZIENDA ANALIZZATI")) {
-                            ForEach(analysisStore.analisi) { analisi in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(analisi.fileName)
-                                        .font(.headline)
-                                        .lineLimit(2)
+                        Section(header: Text("DATE DA CONTROLLARE")) {
+                            ForEach(dateDisponibili) { bolletta in
+                                NavigationLink {
+                                    ConfrontoBollettaView(bolletta: bolletta)
+                                } label: {
                                     HStack {
-                                        Text("Righe: \(analisi.righe.count)")
-                                        if let data = analisi.dataDocumento {
-                                            Text("• Data: \(data.formatted(date: .numeric, time: .omitted))")
-                                        }
+                                        Text(bolletta.data.formatted(date: .numeric, time: .omitted))
+                                            .font(.title3)
+                                        Spacer()
+                                        Image(systemName: "exclamationmark.triangle")
                                     }
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-
-                                    if !analisi.righe.isEmpty {
-                                        ForEach(analisi.righe.prefix(12)) { riga in
-                                            HStack {
-                                                Text(riga.articolo)
-                                                    .lineLimit(1)
-                                                Spacer()
-                                                Text("\(riga.quantita)")
-                                                    .fontWeight(.semibold)
-                                                if let prezzo = riga.prezzoUnitario {
-                                                    Text(String(format: "€ %.2f", prezzo))
-                                                        .foregroundColor(.secondary)
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        Text("Nessuna riga tabellare riconosciuta. Il testo del PDF è stato comunque acquisito.")
-                                            .font(.footnote)
-                                            .foregroundColor(.orange)
-                                    }
+                                    .padding(.vertical, 8)
                                 }
-                                .padding(.vertical, 6)
                             }
                         }
                     }
@@ -930,14 +927,14 @@ struct DatiAnalizzatiView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
+                    Button("Chiudi") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
                 }
             }
         }
-        .navigationViewStyle(.stack)
     }
 }
-
 
 struct ConfrontoBollettaView: View {
     let bolletta: Bolletta
