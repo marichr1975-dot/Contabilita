@@ -30,5 +30,5 @@ targets:
       properties:
         CFBundleDisplayName: Contabilità
         CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "1"
+        CFBundleVersion: "3"
         UILaunchScreen: {}
