@@ -115,18 +115,17 @@ final class PDFAnalysisStore: ObservableObject {
     }
 
     private func estraiGiorniPDF(_ document: PDFDocument) -> [PDFAnalysisDay] {
-        // Il prospetto BAGFUL è una tabella: una data per riga e le quantità
-        // nelle colonne degli articoli. La data viene individuata direttamente
-        // sui caratteri PDF, così nessuna riga viene persa se PDFKit spezza o
-        // fonde una parola durante l'estrazione.
         let articoli = [
             "MESSENGER BAGPACK", "TODAY", "ACTIVITY", "ZAINI MARIN", "CLASSY",
             "ZAINO PRO", "CASE MARINA", "MONEYFUL", "BORSA IN STOFFA", "PORTAPC"
         ]
 
-        // Bordi destri delle colonne del prospetto reale fornito.
-        let rightEdges: [CGFloat] = [151, 202, 253, 304, 355, 406, 457, 558, 639, 690]
-        let dateRegex = try? NSRegularExpression(
+        // Coordinate reali delle colonne del prospetto BAGFUL fornito.
+        // Usiamo il centro della colonna, non il bordo destro: è più stabile
+        // con PDF creati da Excel/Numbers e con numeri a 1 o 2 cifre.
+        let columnCenters: [CGFloat] = [148, 199, 249, 300, 351, 402, 453, 503, 554, 635, 686]
+
+        let dateRegex = try! NSRegularExpression(
             pattern: #"(?<!\d)(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?!\d)"#
         )
 
@@ -134,54 +133,57 @@ final class PDFAnalysisStore: ObservableObject {
 
         for pageIndex in 0..<document.pageCount {
             guard let page = document.page(at: pageIndex),
-                  let pageText = page.string else { continue }
+                  let text = page.string else { continue }
 
-            let nsText = pageText as NSString
-            let fullRange = NSRange(location: 0, length: nsText.length)
-            let matches = dateRegex?.matches(in: pageText, range: fullRange) ?? []
             let words = paroleConPosizione(page)
 
-            for match in matches {
-                let raw = nsText.substring(with: match.range)
-                guard let date = dataDaStringa(raw) else { continue }
+            // FONDAMENTALE: individuiamo le date dalle parole visibili del PDF,
+            // non dagli indici di carattere di PDFKit. In questo modo una data
+            // non può saltare perché characterBounds e page.string hanno indici
+            // diversi.
+            let dateWords = words.filter { word in
+                dateRegex.firstMatch(in: word.text,
+                                     range: NSRange(word.text.startIndex..., in: word.text)) != nil
+            }
 
-                // Ricaviamo la posizione della data dai caratteri originali.
-                var dateRect = CGRect.null
-                for i in match.range.location..<(match.range.location + match.range.length) {
-                    let r = page.characterBounds(at: i)
-                    if !r.isNull { dateRect = dateRect.isNull ? r : dateRect.union(r) }
+            for dateWord in dateWords {
+                guard let match = dateRegex.firstMatch(
+                    in: dateWord.text,
+                    range: NSRange(dateWord.text.startIndex..., in: dateWord.text)
+                ) else { continue }
+
+                let rawDate = (dateWord.text as NSString).substring(with: match.range)
+                guard let date = dataDaStringa(rawDate) else { continue }
+
+                let rowY = dateWord.rect.midY
+                let numericWords = words.filter { word in
+                    guard abs(word.rect.midY - rowY) <= 2.5 else { return false }
+                    guard word.rect.minX > 125 else { return false }
+                    return Int(word.text.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
                 }
 
                 var rows: [PDFAnalysisRow] = []
-                if !dateRect.isNull {
-                    let rowY = dateRect.midY
-                    let nums = words.compactMap { word -> Word? in
-                        guard let value = Int(word.text), value >= 0 else { return nil }
-                        guard abs(word.rect.midY - rowY) < 6 else { return nil }
-                        return word
-                    }
+                for index in 0..<min(10, articoli.count) {
+                    let center = columnCenters[index]
+                    guard let token = numericWords.min(by: {
+                        abs($0.rect.midX - center) < abs($1.rect.midX - center)
+                    }) else { continue }
 
-                    // Una cella vuota non produce alcun numero nel PDF. Perciò
-                    // scegliamo, per ogni colonna, soltanto un numero realmente
-                    // presente entro la tolleranza della colonna.
-                    for (index, edge) in rightEdges.enumerated() {
-                        guard let token = nums.min(by: {
-                            abs($0.rect.maxX - edge) < abs($1.rect.maxX - edge)
-                        }) else { continue }
-                        guard abs(token.rect.maxX - edge) <= 10,
-                              let quantity = Int(token.text), quantity > 0 else { continue }
-                        rows.append(PDFAnalysisRow(article: articoli[index], quantity: quantity))
-                    }
+                    // Tolleranza ampia ma non sufficiente per prendere la colonna vicina.
+                    guard abs(token.rect.midX - center) <= 12,
+                          let quantity = Int(token.text), quantity > 0 else { continue }
+                    rows.append(PDFAnalysisRow(article: articoli[index], quantity: quantity))
                 }
 
-                // IMPORTANTISSIMO: la giornata viene aggiunta anche se non è
-                // stata trovata nessuna quantità. La data non deve mai sparire.
+                // Una data trovata è SEMPRE una giornata valida, anche se non ha
+                // quantità. Questo garantisce che tutte le date del prospetto
+                // compaiano nel confronto.
                 trovati.append(PDFAnalysisDay(date: date, rows: rows))
             }
         }
 
-        // Se una data compare una sola volta (come nel prospetto fornito), la
-        // conserviamo. Se compare più volte, sommiamo le quantità per articolo.
+        // Deduplica per giorno. Se lo stesso giorno appare più volte, somma le
+        // quantità dello stesso articolo invece di perdere una delle righe.
         var perData: [Date: [PDFAnalysisRow]] = [:]
         for day in trovati {
             let key = Calendar(identifier: .gregorian).startOfDay(for: day.date)
@@ -191,62 +193,20 @@ final class PDFAnalysisStore: ObservableObject {
         return perData.keys.sorted(by: >).map { date in
             var aggregate: [String: PDFAnalysisRow] = [:]
             for row in perData[date] ?? [] {
-                let key = row.article
-                if let existing = aggregate[key] {
-                    aggregate[key] = PDFAnalysisRow(article: existing.article,
-                                                     quantity: existing.quantity + row.quantity)
+                if let existing = aggregate[row.article] {
+                    aggregate[row.article] = PDFAnalysisRow(
+                        article: existing.article,
+                        quantity: existing.quantity + row.quantity
+                    )
                 } else {
-                    aggregate[key] = row
+                    aggregate[row.article] = row
                 }
             }
-            return PDFAnalysisDay(date: date,
-                                  rows: aggregate.values.sorted { $0.article < $1.article })
+            return PDFAnalysisDay(
+                date: date,
+                rows: aggregate.values.sorted { $0.article < $1.article }
+            )
         }
-    }
-
-    private func paroleConPosizione(_ page: PDFPage) -> [Word] {
-        guard let string = page.string else { return [] }
-        let ns = string as NSString
-        var result: [Word] = []
-        var current = ""
-        var currentRect = CGRect.null
-        var previousRect = CGRect.null
-
-        func flush() {
-            let text = current.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty && !currentRect.isNull {
-                result.append(Word(text: text, rect: currentRect))
-            }
-            current = ""
-            currentRect = .null
-        }
-
-        for i in 0..<ns.length {
-            let character = ns.substring(with: NSRange(location: i, length: 1))
-            let rect = page.characterBounds(at: i)
-            if rect.isNull { continue }
-
-            let isSpace = character.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
-            let sameLine = !previousRect.isNull && abs(rect.midY - previousRect.midY) < 3
-            let gap = !previousRect.isNull ? rect.minX - previousRect.maxX : 0
-
-            if isSpace || (!current.isEmpty && (!sameLine || gap > 6)) {
-                flush()
-            }
-
-            if !isSpace {
-                if current.isEmpty {
-                    current = character
-                    currentRect = rect
-                } else {
-                    current.append(character)
-                    currentRect = currentRect.union(rect)
-                }
-            }
-            previousRect = rect
-        }
-        flush()
-        return result
     }
 
     private func centriColonne(_ numericWords: [Word]) -> [CGFloat] {
