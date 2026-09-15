@@ -8,7 +8,7 @@ struct ExcelAnalysisDay {
 
 final class ExcelAnalysis {
     static func analizza(file: URL) -> [ExcelAnalysisDay]? {
-        guard let archive = Archive(url: file, accessMode: .read),
+        guard let archive = try? Archive(url: file, accessMode: .read),
               let sheetData = leggiFile(archive: archive, path: "xl/worksheets/sheet1.xml") else { return nil }
 
         let sharedStrings = leggiSharedStrings(archive: archive)
@@ -122,18 +122,28 @@ final class ExcelAnalysis {
 
     private static func dataDaValore(_ valore: String) -> Date? {
         let s = valore.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pattern = #"^\s*(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\s*$"#
-        if let re = try? NSRegularExpression(pattern: pattern), let m = re.firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length)) {
+        let pattern = #"^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$"#
+        if let re = try? NSRegularExpression(pattern: pattern),
+           let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) {
             let ns = s as NSString
             let d = Int(ns.substring(with: m.range(at: 1))) ?? 0
             let mo = Int(ns.substring(with: m.range(at: 2))) ?? 0
             var y = Int(ns.substring(with: m.range(at: 3))) ?? 0
             if y < 100 { y += 2000 }
-            var c = DateComponents(); c.day = d; c.month = mo; c.year = y
-            return Calendar.current.date(from: c)
+            guard (1...31).contains(d), (1...12).contains(mo), (2000...2100).contains(y) else { return nil }
+            var c = DateComponents()
+            c.day = d; c.month = mo; c.year = y
+            return Calendar(identifier: .gregorian).date(from: c)
         }
-        if let serial = Double(s), serial > 20000, serial < 60000 {
-            return Calendar.current.date(byAdding: .day, value: Int(serial) - 25569, to: Date(timeIntervalSince1970: 0))
+
+        // Excel serial date (1900 date system). Accept only a realistic range,
+        // so quantities or other numbers can never become absurd dates.
+        if let serial = Double(s), serial >= 30000, serial <= 60000 {
+            var base = DateComponents()
+            base.year = 1899; base.month = 12; base.day = 30
+            let calendar = Calendar(identifier: .gregorian)
+            guard let epoch = calendar.date(from: base) else { return nil }
+            return calendar.date(byAdding: .day, value: Int(serial.rounded()), to: epoch)
         }
         return nil
     }
