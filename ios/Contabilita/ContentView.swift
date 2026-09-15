@@ -377,13 +377,18 @@ struct NuovaBollettaView: View {
         if let b = bollettaDaModificare {
             var gruppiIniziali = gruppiBollettaDaNomi()
             let lavoriSalvati = b.lavorazioni
+            let normalizzaTesto: (String) -> String = { testo in
+                testo.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+                    .replacingOccurrences(of: " ", with: "")
+                    .replacingOccurrences(of: "-", with: "")
+            }
 
             for g in gruppiIniziali.indices {
                 for v in gruppiIniziali[g].voci.indices {
                     let nomeCompleto = gruppiIniziali[g].voci[v].nome.isEmpty
                         ? gruppiIniziali[g].nome
                         : "\(gruppiIniziali[g].nome) \(gruppiIniziali[g].voci[v].nome)"
-                    if let lavoro = lavoriSalvati.first(where: { normalizza($0.nome) == normalizza(nomeCompleto) }) {
+                    if let lavoro = lavoriSalvati.first(where: { normalizzaTesto($0.nome) == normalizzaTesto(nomeCompleto) }) {
                         gruppiIniziali[g].voci[v].quantita = lavoro.quantita
                     }
                 }
@@ -394,9 +399,9 @@ struct NuovaBollettaView: View {
                 g.voci.map { v in
                     v.nome.isEmpty ? g.nome : "\(g.nome) \(v.nome)"
                 }
-            }.map(normalizza))
+            }.map(normalizzaTesto))
 
-            for lavoro in lavoriSalvati where !nomiStandard.contains(normalizza(lavoro.nome)) {
+            for lavoro in lavoriSalvati where !nomiStandard.contains(normalizzaTesto(lavoro.nome)) {
                 gruppiIniziali.append(
                     GruppoLavorazione(
                         nome: lavoro.nome,
