@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 cls
 title CONTABILITA - PUSH GITHUB
 
@@ -9,31 +9,88 @@ echo.
 
 cd /d "%~dp0"
 
+echo CARTELLA REPOSITORY:
+cd
+echo.
+
 if not exist ".git" (
-    echo Inizializzo il repository...
-    git init
-    git branch -M main
-    git remote add origin https://github.com/marichr1975-dot/Contabilita.git
-) else (
-    git remote get-url origin >nul 2>&1
-    if errorlevel 1 git remote add origin https://github.com/marichr1975-dot/Contabilita.git
+    echo ERRORE: questa cartella non e' un repository Git.
+    echo.
+    pause
+    exit /b 1
 )
 
+echo ==========================================
+echo CONTROLLO MODIFICHE
+echo ==========================================
 echo.
-echo Aggiungo i file...
+
+git status --short
+echo.
+
+git diff --quiet
+if %errorlevel%==0 (
+    git diff --cached --quiet
+    if %errorlevel%==0 (
+        echo *** NESSUNA MODIFICA TROVATA ***
+        echo.
+        echo Controlla di aver sostituito la cartella IOS.
+        echo.
+        pause
+        exit /b 0
+    )
+)
+
+echo ==========================================
+echo AGGIUNGO I FILE
+echo ==========================================
+echo.
+
 git add .
 
 echo.
-echo Creo il commit...
-git commit -m "Prima versione Contabilita"
+echo FILE PRONTI PER IL COMMIT:
+echo.
+git status --short
 
 echo.
-echo PUSH SU GITHUB...
+echo ==========================================
+echo CREO IL COMMIT
+echo ==========================================
+echo.
+
+git commit -m "Aggiornamento Contabilita"
+
+if errorlevel 1 (
+    echo.
+    echo *** ERRORE: COMMIT NON CREATO ***
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
+echo ==========================================
+echo PUSH SU GITHUB
+echo ==========================================
+echo.
+
 git push -u origin main
 
+if errorlevel 1 (
+    echo.
+    echo *** ERRORE DURANTE IL PUSH ***
+    echo.
+    pause
+    exit /b 1
+)
+
 echo.
 echo ==========================================
-echo              OPERAZIONE TERMINATA
+echo       PUSH COMPLETATO CORRETTAMENTE
 echo ==========================================
+echo.
+echo Il workflow GitHub Actions dovrebbe partire
+echo automaticamente.
 echo.
 pause
