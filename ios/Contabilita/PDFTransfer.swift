@@ -59,7 +59,7 @@ final class PDFTransferStore: ObservableObject {
             .deletingPathExtension
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let safe = base.isEmpty ? "prospetto" : base
-        let estensione = nome.pathExtension.isEmpty ? "pdf" : nome.pathExtension
+        let estensione = (nome as NSString).pathExtension.isEmpty ? "pdf" : (nome as NSString).pathExtension
         let url = folder.appendingPathComponent("\(safe)-\(UUID().uuidString.prefix(8)).\(estensione)")
 
         do {
