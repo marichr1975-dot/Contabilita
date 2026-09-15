@@ -34,6 +34,11 @@ final class PDFTransferStore: ObservableObject {
         ricarica()
     }
 
+    func elimina(file: URL) {
+        try? FileManager.default.removeItem(at: file)
+        ricarica()
+    }
+
     func ricarica() {
         let fm = FileManager.default
         try? fm.createDirectory(at: folder, withIntermediateDirectories: true)

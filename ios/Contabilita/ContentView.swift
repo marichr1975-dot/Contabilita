@@ -248,6 +248,11 @@ struct PDFImportatiView: View {
                             .tint(.green)
                             Button("MOSTRA PDF") { pdfDaMostrare = file }
                                 .buttonStyle(.bordered)
+                            Button("CANCELLA") {
+                                store.elimina(file: file)
+                            }
+                            .buttonStyle(.bordered)
+                            .foregroundColor(.red)
                         }
                         .padding(.vertical, 8)
                     }
@@ -743,34 +748,60 @@ struct DatiAnalizzatiView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                if analysisStore.analyses.isEmpty {
+                if archivio.bollette.isEmpty {
                     Spacer()
-                    Text("Nessun PDF analizzato.").font(.title3)
-                    Text("Vai in PDF AZIENDA e premi CARICA.")
-                        .foregroundColor(.secondary).padding(.top, 4)
+                    Text("Nessuna bolletta caricata.")
+                        .font(.title3)
                     Spacer()
                 } else {
-                    List {
-                        Section("PROSPETTI AZIENDA") {
-                            ForEach(analysisStore.analyses) { analysis in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(analysis.fileName).font(.headline)
-                                    if let data = analysis.date {
-                                        Text(data.formatted(date: .numeric, time: .omitted))
-                                            .foregroundColor(.secondary)
-                                    }
-                                    ForEach(analysis.rows) { row in
-                                        HStack {
-                                            Text(row.article).frame(maxWidth: .infinity, alignment: .leading)
-                                            Text("AZIENDA: \(row.quantity)")
-                                            if let mine = quantitaMia(row.article, data: analysis.date) {
-                                                Text("TU: \(mine)")
-                                            }
-                                        }.font(.subheadline)
-                                    }
-                                }.padding(.vertical, 6)
+                    VStack(spacing: 0) {
+                        // Intestazione fissa: data a sinistra, poi NS e BAGFUL.
+                        HStack(spacing: 0) {
+                            Text("DATA")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 12)
+
+                            Text("NS\nCARICATE")
+                                .font(.headline)
+                                .multilineTextAlignment(.center)
+                                .frame(width: 110)
+                                .padding(.vertical, 12)
+
+                            Text("BAGFUL")
+                                .font(.headline)
+                                .frame(width: 110)
+                                .padding(.vertical, 12)
+                        }
+                        .background(Color.gray.opacity(0.15))
+
+                        Divider()
+
+                        List {
+                            ForEach(archivio.bollette.sorted { $0.data > $1.data }) { bolletta in
+                                HStack(spacing: 0) {
+                                    Text(bolletta.data.formatted(date: .numeric, time: .omitted))
+                                        .font(.body)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                                    // Le nostre bollette sono sempre considerate corrette.
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.title2)
+                                        .foregroundColor(.green)
+                                        .frame(width: 110)
+
+                                    // Per ora BAGFUL viene lasciata vuota:
+                                    // il controllo del PDF aziendale verrà aggiunto dopo.
+                                    Text("—")
+                                        .font(.title3)
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 110)
+                                }
+                                .padding(.vertical, 8)
                             }
                         }
+                        .listStyle(.plain)
                     }
                 }
             }
@@ -783,19 +814,6 @@ struct DatiAnalizzatiView: View {
             }
         }
         .navigationViewStyle(.stack)
-    }
-
-    private func quantitaMia(_ articolo: String, data: Date?) -> Int? {
-        guard let data = data else { return nil }
-        let cal = Calendar.current
-        guard let bolletta = archivio.bollette.first(where: { cal.isDate($0.data, inSameDayAs: data) }) else { return nil }
-        return bolletta.lavorazioni.first(where: { normalizza($0.nome) == normalizza(articolo) }).flatMap { Int($0.quantita) }
-    }
-
-    private func normalizza(_ s: String) -> String {
-        s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "-", with: "")
     }
 }
 
