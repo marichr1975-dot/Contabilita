@@ -37,12 +37,27 @@ struct PDFAnalysisResult: Identifiable, Codable {
     var rows: [PDFAnalysisRow]
     var days: [PDFAnalysisDay]
 
+    private enum CodingKeys: String, CodingKey {
+        case id, fileName, date, rows, days
+    }
+
     init(id: UUID = UUID(), fileName: String, date: Date?, rows: [PDFAnalysisRow], days: [PDFAnalysisDay] = []) {
         self.id = id
         self.fileName = fileName
         self.date = date
         self.rows = rows
         self.days = days
+    }
+
+    // Compatibilità con le analisi salvate nelle versioni precedenti:
+    // il campo days non esisteva, quindi deve essere facoltativo in lettura.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        fileName = try container.decode(String.self, forKey: .fileName)
+        date = try container.decodeIfPresent(Date.self, forKey: .date)
+        rows = try container.decodeIfPresent([PDFAnalysisRow].self, forKey: .rows) ?? []
+        days = try container.decodeIfPresent([PDFAnalysisDay].self, forKey: .days) ?? []
     }
 }
 
@@ -122,7 +137,7 @@ final class PDFAnalysisStore: ObservableObject {
 
         let columnCenters: [CGFloat] = [148, 199, 249, 300, 351, 402, 453, 503, 554, 635, 686]
         let dateRegex = try! NSRegularExpression(
-            pattern: #"(?<!\\d)(\\d{1,2})[./-](\\d{1,2})[./-](\\d{2,4})(?!\\d)"#
+            pattern: #"(?<!\d)(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?!\d)"#
         )
 
         var trovati: [PDFAnalysisDay] = []
