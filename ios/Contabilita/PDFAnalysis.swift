@@ -135,52 +135,68 @@ final class PDFAnalysisStore: ObservableObject {
             "ZAINO PRO", "CASE MARINA", "MONEYFUL", "BORSA IN STOFFA", "PORTAPC"
         ]
 
-        let columnCenters: [CGFloat] = [148, 199, 249, 300, 351, 402, 453, 503, 554, 635, 686]
+        // Centri reali delle 10 colonne del prospetto BAGFUL.
+        // PORTAPC è la colonna più a destra (circa X=686), non X=635.
+        let columnCenters: [CGFloat] = [148, 199, 249, 300, 351, 402, 453, 503, 554, 686]
         let dateRegex = try! NSRegularExpression(
-            pattern: #"(?<!\d)(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?!\d)"#
+            pattern: #"(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})"#
         )
 
         var trovati: [PDFAnalysisDay] = []
 
         for pageIndex in 0..<document.pageCount {
             guard let page = document.page(at: pageIndex),
-                  let text = page.string else { continue }
+                  let text = page.string, !text.isEmpty else { continue }
 
-            // LE DATE VENGONO PRESE DAL TESTO PURO DEL PDF.
-            // Non dipendono dalle coordinate di PDFKit: una data presente nel
-            // prospetto viene quindi sempre registrata.
             let nsText = text as NSString
-            let dateMatches = dateRegex.matches(
-                in: text,
-                range: NSRange(location: 0, length: nsText.length)
-            )
-
+            let fullRange = NSRange(location: 0, length: nsText.length)
+            let dateMatches = dateRegex.matches(in: text, range: fullRange)
             let words = paroleConPosizione(page)
 
             for match in dateMatches {
                 let rawDate = nsText.substring(with: match.range)
                 guard let date = dataDaStringa(rawDate) else { continue }
 
-                // Cerchiamo la stessa data tra le parole con coordinate solo
-                // per recuperare la riga delle quantità. Se PDFKit non fornisce
-                // una posizione valida, la data resta comunque presente.
+                // Ricaviamo direttamente la posizione della DATA dai suoi
+                // caratteri. Non dipendiamo più da words.first(where: ...):
+                // anche se PDFKit divide la parola in modo diverso, la data
+                // rimane riconosciuta e la sua riga viene individuata.
+                var dateRect = CGRect.null
+                let start = match.range.location
+                let end = start + match.range.length
+                if start < end {
+                    for index in start..<end {
+                        let r = page.characterBounds(at: index)
+                        if !r.isNull && !r.isEmpty { dateRect = dateRect.union(r) }
+                    }
+                }
+
+                // Fallback: cerca una parola che contenga la data.
+                if dateRect.isNull || dateRect.isEmpty {
+                    if let dateWord = words.first(where: { $0.text == rawDate }) {
+                        dateRect = dateWord.rect
+                    }
+                }
+
                 var rows: [PDFAnalysisRow] = []
-                if let dateWord = words.first(where: { word in
-                    word.text.range(of: rawDate, options: [.caseInsensitive]) != nil
-                }) {
-                    let rowY = dateWord.rect.midY
+                if !dateRect.isNull && !dateRect.isEmpty {
+                    let rowY = dateRect.midY
                     let numericWords = words.filter { word in
                         guard abs(word.rect.midY - rowY) <= 3.5 else { return false }
                         guard word.rect.minX > 125 else { return false }
+                        guard word.rect.maxX < 705 else { return false }
                         return Int(word.text.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
                     }
 
-                    for index in 0..<min(10, articoli.count) {
+                    for index in 0..<articoli.count {
                         let center = columnCenters[index]
+                        // Una cella vuota non produce alcuna parola nel PDF.
+                        // Cerchiamo quindi solo un numero realmente vicino
+                        // alla colonna corrente.
                         guard let token = numericWords.min(by: {
                             abs($0.rect.midX - center) < abs($1.rect.midX - center)
                         }) else { continue }
-                        guard abs(token.rect.midX - center) <= 15,
+                        guard abs(token.rect.midX - center) <= 12,
                               let quantity = Int(token.text), quantity > 0 else { continue }
                         rows.append(PDFAnalysisRow(article: articoli[index], quantity: quantity))
                     }
