@@ -367,6 +367,7 @@ struct NuovaBollettaView: View {
     @FocusState private var rigaAttiva: Int?
     @State private var nuovoArticolo = ""
     @State private var mostraNuovoArticolo = false
+    @State private var mostraConfermaCancella = false
 
     init(archivio: Archivio, bollettaDaModificare: Bolletta? = nil) {
         self.archivio = archivio
@@ -388,7 +389,7 @@ struct NuovaBollettaView: View {
                     mascheraBolletta
                 }
             }
-            .navigationTitle(dataConfermata ? "Elenco lavori" : "Nuova bolletta")
+            .navigationTitle(dataConfermata ? "Elenco lavori" : (bollettaDaModificare == nil ? "Nuova bolletta" : "Modifica bolletta"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -396,11 +397,30 @@ struct NuovaBollettaView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if dataConfermata {
-                        Button("SALVA") { salva() }
-                            .font(.system(size: 17, weight: .bold))
+                        HStack(spacing: 14) {
+                            if bollettaDaModificare != nil {
+                                Button("CANCELLA") {
+                                    mostraConfermaCancella = true
+                                }
+                                .foregroundColor(.red)
+                            }
+                            Button("SALVA") { salva() }
+                                .font(.system(size: 17, weight: .bold))
+                        }
                     }
                 }
             }
+        }
+        .alert("Cancella bolletta", isPresented: $mostraConfermaCancella) {
+            Button("Cancella", role: .destructive) {
+                if let bollettaDaModificare {
+                    archivio.eliminaBolletta(id: bollettaDaModificare.id)
+                }
+                presentationMode.wrappedValue.dismiss()
+            }
+            Button("Annulla", role: .cancel) { }
+        } message: {
+            Text("Vuoi cancellare definitivamente questa bolletta?")
         }
         .onAppear {
             if gruppi.isEmpty && bollettaDaModificare == nil {
@@ -435,7 +455,6 @@ struct NuovaBollettaView: View {
     private var mascheraBolletta: some View {
         VStack(spacing: 0) {
             intestazioneFissa
-
             Divider()
 
             ScrollViewReader { proxy in
@@ -445,19 +464,20 @@ struct NuovaBollettaView: View {
                             gruppoView(g, proxy: proxy)
                         }
 
-                        Button {
-                            mostraNuovoArticolo = true
-                        } label: {
-                            Text("+ AGGIUNGI ARTICOLO")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity).padding()
+                        if bollettaDaModificare == nil {
+                            Button {
+                                mostraNuovoArticolo = true
+                            } label: {
+                                Text("+ AGGIUNGI ARTICOLO")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity).padding()
+                            }
+                            .buttonStyle(.bordered)
                         }
-                        .buttonStyle(.bordered)
                     }
                     .padding(12)
                 }
             }
-
         }
         .alert("Nuovo articolo", isPresented: $mostraNuovoArticolo) {
             TextField("Nome articolo", text: $nuovoArticolo)
@@ -487,16 +507,13 @@ struct NuovaBollettaView: View {
                     Text("NOME").font(.caption)
                     Text("data").font(.headline)
                 }
-
                 Spacer()
-
                 VStack(spacing: 1) {
                     Text("elenco").font(.headline)
                     Text("lavori").font(.headline)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(Color.black).foregroundColor(.white)
-
                 Text("bagful")
                     .font(.system(size: 30, weight: .bold))
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -517,8 +534,7 @@ struct NuovaBollettaView: View {
     private func gruppoView(_ g: Int, proxy: ScrollViewProxy) -> some View {
         VStack(spacing: 0) {
             HStack(alignment: .bottom) {
-                Text(gruppi[g].nome)
-                    .font(.headline)
+                Text(gruppi[g].nome).font(.headline)
                 Spacer()
                 Text("quantità").font(.headline)
             }
@@ -527,14 +543,10 @@ struct NuovaBollettaView: View {
             ForEach(gruppi[g].voci.indices, id: \.self) { v in
                 let flat = indicePiatto(g, v)
                 HStack(spacing: 8) {
-                    Text("□")
-                        .font(.title3)
-                        .frame(width: 24)
-
+                    Text("□").font(.title3).frame(width: 24)
                     Text(gruppi[g].voci[v].nome)
                         .font(.title3)
                         .frame(maxWidth: .infinity, alignment: .leading)
-
                     TextField("", text: binding(g: g, v: v))
                         .font(.system(size: 22))
                         .foregroundColor(.blue)
@@ -548,10 +560,7 @@ struct NuovaBollettaView: View {
                 .padding(.horizontal, 10).padding(.vertical, 5)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 3)
-                .stroke(Color.gray.opacity(0.65), lineWidth: 1)
-        )
+        .background(RoundedRectangle(cornerRadius: 3).stroke(Color.gray.opacity(0.65), lineWidth: 1))
     }
 
     private func binding(g: Int, v: Int) -> Binding<String> {
@@ -568,13 +577,8 @@ struct NuovaBollettaView: View {
     }
 
     private func prossimaRiga() {
-        // L'OK della tastiera passa alla voce successiva.
-        // La gestione del focus visivo viene completata nel prossimo collegamento del campo.
-        if let r = rigaAttiva {
-            rigaAttiva = r + 1
-        } else {
-            rigaAttiva = 1
-        }
+        if let r = rigaAttiva { rigaAttiva = r + 1 }
+        else { rigaAttiva = 1 }
     }
 
     private func salva() {
@@ -593,217 +597,89 @@ struct NuovaBollettaView: View {
 struct SelezionaDataModificaView: View {
     @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
+    @State private var data = Date()
+    @State private var bolletteTrovate: [Bolletta] = []
+    @State private var mostraScelta = false
     @State private var bollettaSelezionata: Bolletta?
 
     var body: some View {
-        Group {
-            if archivio.bollette.count == 1, let bolletta = archivio.bollette.first {
-                NuovaBollettaView(archivio: archivio, bollettaDaModificare: bolletta)
-            } else if archivio.bollette.count > 1 {
-                NavigationView {
-                    List {
-                        Section("SELEZIONA BOLLETTA") {
-                            ForEach(archivio.bollette.sorted { $0.data > $1.data }) { bolletta in
-                                Button {
-                                    bollettaSelezionata = bolletta
-                                } label: {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("BOLLETTA \(numeroBolletta(bolletta))")
-                                                .font(.title3).fontWeight(.semibold)
-                                            Text(bolletta.data.formatted(date: .numeric, time: .omitted))
-                                                .foregroundColor(.secondary)
-                                        }
-                                        Spacer()
-                                        Text("\(totalePezzi(bolletta)) pezzi")
-                                            .font(.headline)
-                                        Image(systemName: "chevron.right").foregroundColor(.secondary)
-                                    }
-                                    .padding(.vertical, 10)
-                                }
-                            }
-                        }
-                    }
-                    .navigationTitle("Modifica bolletta")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarLeading) {
-                            Button("Annulla") { presentationMode.wrappedValue.dismiss() }
-                        }
-                    }
-                }
-                .navigationViewStyle(.stack)
-            } else {
-                NavigationView {
-                    VStack(spacing: 20) {
-                        Text("Non ci sono bollette salvate.").font(.title3)
-                        Button("OK") { presentationMode.wrappedValue.dismiss() }
-                            .buttonStyle(.borderedProminent)
-                    }.padding().navigationTitle("Modifica bolletta")
-                }
-                .navigationViewStyle(.stack)
-            }
-        }
-        .sheet(item: $bollettaSelezionata) { bolletta in
-            NuovaBollettaView(archivio: archivio, bollettaDaModificare: bolletta)
-        }
-    }
-
-    private func numeroBolletta(_ bolletta: Bolletta) -> Int {
-        archivio.bollette.sorted { $0.data > $1.data }.firstIndex(where: { $0.id == bolletta.id })! + 1
-    }
-
-    private func totalePezzi(_ bolletta: Bolletta) -> Int {
-        bolletta.lavorazioni.reduce(0) { $0 + (Int($1.quantita) ?? 0) }
-    }
-}
-
-
-struct ModificaBollettaView: View {
-    @ObservedObject var archivio: Archivio
-    @Environment(\.presentationMode) private var presentationMode
-    let bolletta: Bolletta
-    var onDeleted: (() -> Void)? = nil
-
-    @State private var data: Date
-    @State private var mostraCambioData = false
-    @State private var lavorazioni: [Lavorazione]
-    @State private var mostraConfermaCancella = false
-    @FocusState private var rigaAttiva: Int?
-
-    init(archivio: Archivio, bolletta: Bolletta, onDeleted: (() -> Void)? = nil) {
-        self.archivio = archivio
-        self.bolletta = bolletta
-        self.onDeleted = onDeleted
-        _data = State(initialValue: bolletta.data)
-        _lavorazioni = State(initialValue: bolletta.lavorazioni)
-    }
-
-    var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("BOLLETTA DEL")
-                            .font(.caption)
-                        Text(data.formatted(date: .numeric, time: .omitted))
-                            .font(.title3)
-                            .foregroundColor(.blue)
-                    }
+            VStack(spacing: 20) {
+                Text("SCEGLI LA DATA")
+                    .font(.title2)
 
-                    Spacer()
+                DatePicker("Data", selection: $data, displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .labelsHidden()
 
-                    Button("CAMBIA DATA") {
-                        mostraCambioData = true
-                    }
-                    .font(.headline)
+                Button("OK") {
+                    cercaBollette()
                 }
-                .padding(14)
-                .background(Color(white: 0.97))
+                .font(.title2)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .buttonStyle(.borderedProminent)
 
-                Divider()
-
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            HStack {
-                                Text("LAVORAZIONE").font(.headline)
-                                Spacer()
-                                Text("QUANTITÀ").font(.headline).frame(width: 100)
-                            }
-                            .padding(14)
-
-                            ForEach(lavorazioni.indices, id: \.self) { index in
-                                HStack(spacing: 10) {
-                                    Text("□").font(.title3).frame(width: 24)
-                                    Text(lavorazioni[index].nome)
-                                        .font(.title3)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                                    TextField("", text: $lavorazioni[index].quantita)
-                                        .font(.system(size: 22))
-                                        .foregroundColor(.blue)
-                                        .multilineTextAlignment(.center)
-                                        .keyboardType(.numberPad)
-                                        .frame(width: 90, height: 46)
-                                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                                        .focused($rigaAttiva, equals: index)
-                                        .onSubmit {
-                                            if index + 1 < lavorazioni.count {
-                                                rigaAttiva = index + 1
-                                                withAnimation { proxy.scrollTo(index + 1, anchor: .center) }
-                                            } else {
-                                                rigaAttiva = nil
-                                            }
-                                        }
-                                }
-                                .padding(.horizontal, 12).padding(.vertical, 7)
-                                .id(index)
-                                Divider()
-                            }
-                        }
-                    }
-                }
+                Spacer()
             }
+            .padding(22)
             .navigationTitle("Modifica bolletta")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Annulla") { presentationMode.wrappedValue.dismiss() }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 14) {
-                        Button("CANCELLA") {
-                            mostraConfermaCancella = true
+            }
+            .sheet(item: $bollettaSelezionata) { bolletta in
+                NuovaBollettaView(archivio: archivio, bollettaDaModificare: bolletta)
+            }
+            .sheet(isPresented: $mostraScelta) {
+                NavigationView {
+                    List {
+                        Section("BOLLETTE DEL \(data.formatted(date: .numeric, time: .omitted))") {
+                            ForEach(bolletteTrovate) { bolletta in
+                                Button {
+                                    mostraScelta = false
+                                    DispatchQueue.main.async {
+                                        bollettaSelezionata = bolletta
+                                    }
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("BOLLETTA")
+                                                .font(.title3).fontWeight(.semibold)
+                                            Text("\(totalePezzi(bolletta)) pezzi")
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.vertical, 10)
+                                }
+                            }
                         }
-                        .foregroundColor(.red)
-
-                        Button("SALVA") { salva() }
-                            .font(.system(size: 17, weight: .bold))
                     }
+                    .navigationTitle("Scegli bolletta")
+                    .navigationBarTitleDisplayMode(.inline)
                 }
-            }
-            .alert("Cancella bolletta", isPresented: $mostraConfermaCancella) {
-                Button("Cancella", role: .destructive) {
-                    archivio.eliminaBolletta(id: bolletta.id)
-                    onDeleted?()
-                    presentationMode.wrappedValue.dismiss()
-                }
-                Button("Annulla", role: .cancel) { }
-            } message: {
-                Text("Vuoi cancellare definitivamente questa bolletta?")
-            }
-            .sheet(isPresented: $mostraCambioData) {
-                VStack(spacing: 20) {
-                    Text("CAMBIA DATA").font(.title2)
-                    DatePicker("Data", selection: $data, displayedComponents: .date)
-                        .datePickerStyle(.graphical)
-                        .labelsHidden()
-                    Button("OK") { mostraCambioData = false }
-                        .font(.system(size: 22, weight: .bold))
-                        .buttonStyle(.borderedProminent)
-                    Spacer()
-                }
-                .padding(22)
             }
         }
     }
 
-    private func salva() {
-        archivio.salvaBolletta(
-            Bolletta(
-                id: bolletta.id,
-                data: data,
-                lavorazioni: lavorazioni.map {
-                    Lavorazione(
-                        id: $0.id,
-                        nome: $0.nome,
-                        quantita: $0.quantita.isEmpty ? "0" : $0.quantita
-                    )
-                }
-            )
-        )
-        presentationMode.wrappedValue.dismiss()
+    private func cercaBollette() {
+        let cal = Calendar.current
+        bolletteTrovate = archivio.bollette.filter { cal.isDate($0.data, inSameDayAs: data) }
+
+        if bolletteTrovate.count == 1 {
+            bollettaSelezionata = bolletteTrovate[0]
+        } else if bolletteTrovate.count > 1 {
+            mostraScelta = true
+        }
+    }
+
+    private func totalePezzi(_ bolletta: Bolletta) -> Int {
+        bolletta.lavorazioni.reduce(0) { $0 + (Int($1.quantita) ?? 0) }
     }
 }
 
