@@ -87,7 +87,6 @@ final class ShareViewController: UIViewController {
 
         provider.loadDataRepresentation(forTypeIdentifier: type) { [weak self] data, _ in
             guard let self = self, let data = data else {
-                self?.fileSalvato(nome: url.lastPathComponent)
                 return
             }
             _ = self.salvaSuPasteboard(data: data, nome: "prospetto")
