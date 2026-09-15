@@ -4,6 +4,7 @@ import UIKit
 
 final class PDFTransferStore: ObservableObject {
     static let pdfPasteboardType = "com.gotrail.contabilita.pdf"
+    static let companyFilePasteboardType = "com.gotrail.contabilita.companyfile"
     static let namePasteboardType = "com.gotrail.contabilita.name"
 
     @Published private(set) var files: [URL] = []
@@ -21,9 +22,8 @@ final class PDFTransferStore: ObservableObject {
         ricarica()
 
         let pasteboard = UIPasteboard.general
-        guard let data = pasteboard.data(forPasteboardType: Self.pdfPasteboardType),
-              data.count > 4,
-              data.prefix(4).elementsEqual(Data([0x25, 0x50, 0x44, 0x46])) else {
+        guard let data = pasteboard.data(forPasteboardType: Self.companyFilePasteboardType) ?? pasteboard.data(forPasteboardType: Self.pdfPasteboardType),
+              data.count > 4 else {
             return
         }
 
@@ -47,7 +47,7 @@ final class PDFTransferStore: ObservableObject {
             includingPropertiesForKeys: [.creationDateKey],
             options: [.skipsHiddenFiles]
         )) ?? [])
-        .filter { $0.pathExtension.lowercased() == "pdf" }
+        .filter { ["pdf", "xlsx", "xls"].contains($0.pathExtension.lowercased()) }
         .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
     }
 
@@ -59,7 +59,8 @@ final class PDFTransferStore: ObservableObject {
             .deletingPathExtension
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let safe = base.isEmpty ? "prospetto" : base
-        let url = folder.appendingPathComponent("\(safe)-\(UUID().uuidString.prefix(8)).pdf")
+        let estensione = nome.pathExtension.isEmpty ? "pdf" : nome.pathExtension
+        let url = folder.appendingPathComponent("\(safe)-\(UUID().uuidString.prefix(8)).\(estensione)")
 
         do {
             try data.write(to: url, options: .atomic)

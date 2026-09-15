@@ -4,6 +4,10 @@ options:
   deploymentTarget:
     iOS: "15.0"
   createIntermediateGroups: true
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: 0.9.19
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -28,12 +32,13 @@ targets:
     dependencies:
       - target: ContabilitaShare
         embed: true
+      - package: ZIPFoundation
     info:
       path: Contabilita/Info.plist
       properties:
         CFBundleDisplayName: Contabilità
-        CFBundleShortVersionString: "1.3"
-        CFBundleVersion: "13"
+        CFBundleShortVersionString: "1.4"
+        CFBundleVersion: "14"
         UILaunchScreen: {}
         CFBundleURLTypes:
           - CFBundleURLName: com.gotrail.contabilita.import
@@ -60,10 +65,10 @@ targets:
       properties:
         CFBundleDisplayName: Contabilità
         CFBundlePackageType: XPC!
-        CFBundleShortVersionString: "1.3"
-        CFBundleVersion: "13"
+        CFBundleShortVersionString: "1.4"
+        CFBundleVersion: "14"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
           NSExtensionAttributes:
-            NSExtensionActivationRule: SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.pdf").@count > 0).@count > 0
+            NSExtensionActivationRule: SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.data").@count > 0).@count > 0

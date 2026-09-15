@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 final class ShareViewController: UIViewController {
     private let pdfType = "com.gotrail.contabilita.pdf"
+    private let companyFileType = "com.gotrail.contabilita.companyfile"
     private let nameType = "com.gotrail.contabilita.name"
     private var handled = false
     private var saved = false
@@ -23,6 +24,7 @@ final class ShareViewController: UIViewController {
         let providers = items.flatMap { $0.attachments ?? [] }
         guard let provider = providers.first(where: {
             $0.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) ||
+            $0.hasItemConformingToTypeIdentifier(UTType.spreadsheet.identifier) ||
             $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) ||
             $0.hasItemConformingToTypeIdentifier(UTType.data.identifier)
         }) else {
@@ -38,7 +40,18 @@ final class ShareViewController: UIViewController {
         if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
             provider.loadFileRepresentation(forTypeIdentifier: UTType.pdf.identifier) { [weak self] url, _ in
                 if let url = url, let data = try? Data(contentsOf: url), self?.salvaSuPasteboard(data: data, nome: url.lastPathComponent) == true {
-                    self?.pdfSalvato()
+                    self?.fileSalvato(nome: url.lastPathComponent)
+                } else {
+                    self?.caricaComeDati(provider: provider)
+                }
+            }
+            return
+        }
+
+        if provider.hasItemConformingToTypeIdentifier(UTType.spreadsheet.identifier) {
+            provider.loadFileRepresentation(forTypeIdentifier: UTType.spreadsheet.identifier) { [weak self] url, _ in
+                if let url = url, let data = try? Data(contentsOf: url), self?.salvaSuPasteboard(data: data, nome: url.lastPathComponent) == true {
+                    self?.fileSalvato(nome: url.lastPathComponent)
                 } else {
                     self?.caricaComeDati(provider: provider)
                 }
@@ -51,7 +64,7 @@ final class ShareViewController: UIViewController {
                 if let url = item as? URL,
                    let data = try? Data(contentsOf: url),
                    self?.salvaSuPasteboard(data: data, nome: url.lastPathComponent) == true {
-                    self?.pdfSalvato()
+                    self?.fileSalvato(nome: url.lastPathComponent)
                 } else {
                     self?.caricaComeDati(provider: provider)
                 }
@@ -63,30 +76,33 @@ final class ShareViewController: UIViewController {
     }
 
     private func caricaComeDati(provider: NSItemProvider) {
-        let type = provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
-            ? UTType.pdf.identifier
-            : UTType.data.identifier
+        let type: String
+        if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
+            type = UTType.pdf.identifier
+        } else if provider.hasItemConformingToTypeIdentifier(UTType.spreadsheet.identifier) {
+            type = UTType.spreadsheet.identifier
+        } else {
+            type = UTType.data.identifier
+        }
 
         provider.loadDataRepresentation(forTypeIdentifier: type) { [weak self] data, _ in
             guard let self = self, let data = data else {
-                self?.pdfSalvato()
+                self?.fileSalvato(nome: url.lastPathComponent)
                 return
             }
-            _ = self.salvaSuPasteboard(data: data, nome: "prospetto.pdf")
-            self.pdfSalvato()
+            _ = self.salvaSuPasteboard(data: data, nome: "prospetto")
+            self.fileSalvato(nome: "prospetto")
         }
     }
 
     private func salvaSuPasteboard(data: Data, nome: String) -> Bool {
-        guard data.count > 4,
-              data.prefix(4).elementsEqual(Data([0x25, 0x50, 0x44, 0x46])) else {
-            return false
-        }
+        guard data.count > 4 else { return false }
 
         UIPasteboard.general.setItems([
             [
+                companyFileType: data,
                 pdfType: data,
-                nameType: (nome as NSString).deletingPathExtension
+                nameType: nome
             ]
         ], options: [
             .expirationDate: Date(timeIntervalSinceNow: 15 * 60),
@@ -95,7 +111,7 @@ final class ShareViewController: UIViewController {
         return true
     }
 
-    private func pdfSalvato() {
+    private func fileSalvato(nome: String) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.saved = true
@@ -124,7 +140,7 @@ final class ShareViewController: UIViewController {
         view.subviews.forEach { $0.removeFromSuperview() }
 
         let label = UILabel()
-        label.text = "PDF ricevuto in Contabilità"
+        label.text = "File ricevuto in Contabilità"
         label.font = .preferredFont(forTextStyle: .headline)
         label.textAlignment = .center
 

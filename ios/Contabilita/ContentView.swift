@@ -137,8 +137,8 @@ struct ContentView: View {
                 }
 
                 homeButton(
-                    title: pdfImportati > 0 ? "PDF AZIENDA  •  \(pdfImportati)" : "IMPORTA PDF AZIENDA",
-                    icon: "doc.fill",
+                    title: pdfImportati > 0 ? "FILE AZIENDA  •  \(pdfImportati)" : "IMPORTA FILE AZIENDA",
+                    icon: "doc.on.doc.fill",
                     tint: .teal
                 ) {
                     mostraPDF = true
@@ -209,7 +209,7 @@ struct ContentView: View {
             at: folder,
             includingPropertiesForKeys: nil
         )) ?? []
-        pdfImportati = files.filter { $0.pathExtension.lowercased() == "pdf" }.count
+        pdfImportati = files.filter { ["pdf", "xlsx", "xls"].contains($0.pathExtension.lowercased()) }.count
     }
 }
 
@@ -219,6 +219,8 @@ struct PDFImportatiView: View {
     @Environment(\.presentationMode) private var presentationMode
     @State private var pdfDaMostrare: URL?
     @State private var analisiInCorso: URL?
+    @State private var messaggioCaricamento = ""
+    @State private var mostraConfermaCaricamento = false
 
     var body: some View {
         NavigationView {
@@ -228,12 +230,12 @@ struct PDFImportatiView: View {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 48))
                         .foregroundColor(.teal)
-                    Text("Nessun PDF ricevuto").font(.title2)
+                    Text("Nessun file azienda ricevuto").font(.title2)
                     Text("Da WhatsApp o File: Condividi → Contabilità")
                         .multilineTextAlignment(.center).foregroundColor(.secondary)
                     Spacer()
                 } else {
-                    Text("PDF RICEVUTI").font(.title2).fontWeight(.semibold).padding(.top, 8)
+                    Text("FILE AZIENDA RICEVUTI").font(.title2).fontWeight(.semibold).padding(.top, 8)
                     List(store.files, id: \.self) { file in
                         HStack(spacing: 10) {
                             Image(systemName: "doc.fill").foregroundColor(.teal)
@@ -243,11 +245,19 @@ struct PDFImportatiView: View {
                                 analisiInCorso = file
                                 analysisStore.analizza(file: file, bollette: [])
                                 analisiInCorso = nil
+                                messaggioCaricamento = "✓ FILE CARICATO E ANALIZZATO"
+                                mostraConfermaCaricamento = true
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(.green)
-                            Button("MOSTRA PDF") { pdfDaMostrare = file }
-                                .buttonStyle(.bordered)
+                            if file.pathExtension.lowercased() == "pdf" {
+                                Button("MOSTRA PDF") { pdfDaMostrare = file }
+                                    .buttonStyle(.bordered)
+                            } else {
+                                Text("EXCEL")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
                             Button("CANCELLA") {
                                 store.elimina(file: file)
                             }
@@ -260,7 +270,7 @@ struct PDFImportatiView: View {
                 }
             }
             .padding(18)
-            .navigationTitle("PDF azienda")
+            .navigationTitle("File azienda")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -269,6 +279,9 @@ struct PDFImportatiView: View {
             }
             .onAppear { store.ricarica() }
             .sheet(item: $pdfDaMostrare) { file in PDFViewer(url: file) }
+            .alert(messaggioCaricamento, isPresented: $mostraConfermaCaricamento) {
+                Button("OK", role: .cancel) { }
+            }
         }
         .navigationViewStyle(.stack)
     }
@@ -744,65 +757,135 @@ struct DatiAnalizzatiView: View {
     @ObservedObject var archivio: Archivio
     @ObservedObject var analysisStore: PDFAnalysisStore
     @Environment(\.presentationMode) private var presentationMode
+    @State private var bollettaDaAprire: Bolletta?
+
+    private var giorniAzienda: [PDFAnalysisDay] {
+        var perData: [Date: [PDFAnalysisRow]] = [:]
+        for giorno in analysisStore.giorniAzienda() {
+            perData[giorno.date, default: []].append(contentsOf: giorno.rows)
+        }
+        return perData.keys.sorted().map { PDFAnalysisDay(date: $0, rows: perData[$0] ?? []) }
+    }
+
+    private var tutteLeDate: [Date] {
+        let nostre = Set(archivio.bollette.map { giornoSenzaOra($0.data) })
+        let azienda = Set(giorniAzienda.map { giornoSenzaOra($0.date) })
+        return Array(nostre.union(azienda)).sorted(by: >)
+    }
+
+    private func giornoSenzaOra(_ data: Date) -> Date {
+        Calendar.current.startOfDay(for: data)
+    }
+
+    private func bollettaNostra(per data: Date) -> Bolletta? {
+        archivio.bollette.first { giornoSenzaOra($0.data) == giornoSenzaOra(data) }
+    }
+
+    private func giornoAzienda(per data: Date) -> PDFAnalysisDay? {
+        giorniAzienda.first { giornoSenzaOra($0.date) == giornoSenzaOra(data) }
+    }
+
+    private func normalizza(_ testo: String) -> String {
+        testo.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "_", with: "")
+    }
+
+    private func confronto(_ nostra: Bolletta?, _ azienda: PDFAnalysisDay?) -> (nsOK: Bool, bagfulOK: Bool, bagfulMissing: Bool) {
+        guard let nostra else {
+            return (false, azienda != nil, false)
+        }
+        guard let azienda else {
+            return (true, false, true)
+        }
+
+        var aziendaMap: [String: Int] = [:]
+        for riga in azienda.rows {
+            aziendaMap[normalizza(riga.article), default: 0] += riga.quantity
+        }
+        var nostraMap: [String: Int] = [:]
+        for lavoro in nostra.lavorazioni {
+            nostraMap[normalizza(lavoro.nome), default: 0] += Int(lavoro.quantita) ?? 0
+        }
+        return (true, nostraMap == aziendaMap, false)
+    }
+
+    private func coloreData(_ data: Date) -> Color {
+        let stato = confronto(bollettaNostra(per: data), giornoAzienda(per: data))
+        return (stato.nsOK && stato.bagfulOK) ? .green : .red
+    }
+
+    private func testoData(_ data: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd/MM/yyyy"
+        return formatter.string(from: data)
+    }
 
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                if archivio.bollette.isEmpty {
+                if tutteLeDate.isEmpty {
                     Spacer()
                     Text("Nessuna bolletta caricata.")
                         .font(.title3)
                     Spacer()
                 } else {
-                    VStack(spacing: 0) {
-                        // Intestazione fissa: data a sinistra, poi NS e BAGFUL.
-                        HStack(spacing: 0) {
-                            Text("DATA")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 12)
+                    HStack(spacing: 0) {
+                        Text("DATA")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
 
-                            Text("NS\nCARICATE")
-                                .font(.headline)
-                                .multilineTextAlignment(.center)
-                                .frame(width: 110)
-                                .padding(.vertical, 12)
+                        Text("NS\nCARICATE")
+                            .font(.headline)
+                            .multilineTextAlignment(.center)
+                            .frame(width: 110)
+                            .padding(.vertical, 12)
 
-                            Text("BAGFUL")
-                                .font(.headline)
-                                .frame(width: 110)
-                                .padding(.vertical, 12)
-                        }
-                        .background(Color.gray.opacity(0.15))
+                        Text("BAGFUL")
+                            .font(.headline)
+                            .frame(width: 110)
+                            .multilineTextAlignment(.center)
+                            .padding(.vertical, 12)
+                    }
+                    .background(Color.gray.opacity(0.15))
 
-                        Divider()
+                    Divider()
 
-                        List {
-                            ForEach(archivio.bollette.sorted { $0.data > $1.data }) { bolletta in
+                    List {
+                        ForEach(tutteLeDate, id: \.self) { data in
+                            let nostra = bollettaNostra(per: data)
+                            let azienda = giornoAzienda(per: data)
+                            let stato = confronto(nostra, azienda)
+
+                            Button {
+                                if let nostra { bollettaDaAprire = nostra }
+                            } label: {
                                 HStack(spacing: 0) {
-                                    Text(bolletta.data.formatted(date: .numeric, time: .omitted))
+                                    Text(testoData(data))
                                         .font(.body)
+                                        .foregroundColor(coloreData(data))
                                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                                    // Le nostre bollette sono sempre considerate corrette.
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.title2)
-                                        .foregroundColor(.green)
+                                    Text(stato.nsOK ? "✓" : "X")
+                                        .font(.title2.weight(.bold))
+                                        .foregroundColor(stato.nsOK ? .green : .red)
                                         .frame(width: 110)
 
-                                    // Per ora BAGFUL viene lasciata vuota:
-                                    // il controllo del PDF aziendale verrà aggiunto dopo.
-                                    Text("—")
-                                        .font(.title3)
-                                        .foregroundColor(.secondary)
+                                    Text(stato.bagfulOK ? "✓" : (stato.bagfulMissing ? "XX" : "X"))
+                                        .font(.title2.weight(.bold))
+                                        .foregroundColor(stato.bagfulOK ? .green : .red)
                                         .frame(width: 110)
                                 }
                                 .padding(.vertical, 8)
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                         }
-                        .listStyle(.plain)
                     }
+                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Dati analizzati")
@@ -812,11 +895,13 @@ struct DatiAnalizzatiView: View {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
             }
+            .sheet(item: $bollettaDaAprire) { bolletta in
+                NuovaBollettaView(archivio: archivio, bollettaDaModificare: bolletta)
+            }
         }
         .navigationViewStyle(.stack)
     }
 }
-
 
 struct ConfrontoBollettaView: View {
     let bolletta: Bolletta

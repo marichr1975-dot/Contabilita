@@ -90,8 +90,8 @@ struct ContabilitaRootView: View {
                             mostraDatiAnalizzati = true
                         }
                         dashboardButton(
-                            pdfTransfer.files.isEmpty ? "IMPORTA PDF AZIENDA" : "PDF AZIENDA  •  \(pdfTransfer.files.count)",
-                            icon: "doc.fill",
+                            pdfTransfer.files.isEmpty ? "IMPORTA FILE AZIENDA" : "FILE AZIENDA  •  \(pdfTransfer.files.count)",
+                            icon: "doc.on.doc.fill",
                             tint: .teal
                         ) {
                             pdfTransfer.ricarica()
@@ -121,8 +121,8 @@ struct ContabilitaRootView: View {
                     mostraDatiAnalizzati = true
                 }
                 dashboardButton(
-                    pdfTransfer.files.isEmpty ? "IMPORTA PDF AZIENDA" : "PDF AZIENDA  •  \(pdfTransfer.files.count)",
-                    icon: "doc.fill",
+                    pdfTransfer.files.isEmpty ? "IMPORTA FILE AZIENDA" : "FILE AZIENDA  •  \(pdfTransfer.files.count)",
+                    icon: "doc.on.doc.fill",
                     tint: .teal
                 ) {
                     pdfTransfer.ricarica()

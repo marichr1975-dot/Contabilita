@@ -18,17 +18,31 @@ struct PDFAnalysisRow: Identifiable, Codable {
     }
 }
 
+struct PDFAnalysisDay: Identifiable, Codable {
+    let id: UUID
+    var date: Date
+    var rows: [PDFAnalysisRow]
+
+    init(id: UUID = UUID(), date: Date, rows: [PDFAnalysisRow]) {
+        self.id = id
+        self.date = date
+        self.rows = rows
+    }
+}
+
 struct PDFAnalysisResult: Identifiable, Codable {
     let id: UUID
     var fileName: String
     var date: Date?
     var rows: [PDFAnalysisRow]
+    var days: [PDFAnalysisDay]
 
-    init(id: UUID = UUID(), fileName: String, date: Date?, rows: [PDFAnalysisRow]) {
+    init(id: UUID = UUID(), fileName: String, date: Date?, rows: [PDFAnalysisRow], days: [PDFAnalysisDay] = []) {
         self.id = id
         self.fileName = fileName
         self.date = date
         self.rows = rows
+        self.days = days
     }
 }
 
@@ -46,14 +60,44 @@ final class PDFAnalysisStore: ObservableObject {
     }
 
     func analizza(file: URL, bollette: [Bolletta]) {
+        let ext = file.pathExtension.lowercased()
+        if ext == "xlsx" || ext == "xls" {
+            guard let excelDays = ExcelAnalysis.analizza(file: file) else { return }
+            let days = excelDays.map { PDFAnalysisDay(date: $0.date, rows: $0.rows) }
+            let result = PDFAnalysisResult(
+                fileName: file.lastPathComponent,
+                date: days.first?.date,
+                rows: days.flatMap { $0.rows },
+                days: days
+            )
+            salva(result)
+            return
+        }
+
         guard let document = PDFDocument(url: file) else { return }
         let text = (0..<document.pageCount).compactMap { document.page(at: $0)?.string }.joined(separator: "\n")
         let date = estraiData(text)
         let rows = estraiRighe(text)
-        let result = PDFAnalysisResult(fileName: file.lastPathComponent, date: date, rows: rows)
+        let days = date.map { [PDFAnalysisDay(date: $0, rows: rows)] } ?? []
+        salva(PDFAnalysisResult(fileName: file.lastPathComponent, date: date, rows: rows, days: days))
+    }
+
+    private func salva(_ result: PDFAnalysisResult) {
         analyses.removeAll { $0.fileName == result.fileName }
         analyses.insert(result, at: 0)
         if let data = try? JSONEncoder().encode(analyses) { UserDefaults.standard.set(data, forKey: key) }
+    }
+
+    func giorniAzienda() -> [PDFAnalysisDay] {
+        var result: [PDFAnalysisDay] = []
+        for analysis in analyses {
+            if !analysis.days.isEmpty {
+                result.append(contentsOf: analysis.days)
+            } else if let date = analysis.date {
+                result.append(PDFAnalysisDay(date: date, rows: analysis.rows))
+            }
+        }
+        return result
     }
 
     private func estraiData(_ text: String) -> Date? {
@@ -72,7 +116,6 @@ final class PDFAnalysisStore: ObservableObject {
     private func estraiRighe(_ text: String) -> [PDFAnalysisRow] {
         var result: [PDFAnalysisRow] = []
         let lines = text.components(separatedBy: .newlines)
-        let number = #"([0-9]+(?:[.,][0-9]+)?)"#
         let pattern = #"^\s*(.+?)\s+([0-9]+)\s+(?:([0-9]+(?:[.,][0-9]+)?)\s+)?([0-9]+(?:[.,][0-9]+)?)\s*$"#
         let regex = try? NSRegularExpression(pattern: pattern)
         for line in lines {
@@ -88,7 +131,6 @@ final class PDFAnalysisStore: ObservableObject {
                 result.append(PDFAnalysisRow(article: article, quantity: quantity, unitPrice: unit, total: total))
             }
         }
-        _ = number
         return result
     }
 }
