@@ -374,10 +374,41 @@ struct NuovaBollettaView: View {
         self.bollettaDaModificare = bollettaDaModificare
         _data = State(initialValue: bollettaDaModificare?.data ?? Date())
         _dataConfermata = State(initialValue: bollettaDaModificare != nil)
-        let gruppiIniziali: [GruppoLavorazione] = bollettaDaModificare.map { b in
-            b.lavorazioni.map { GruppoLavorazione(nome: $0.nome, voci: [VoceLavorazione(nome: "", quantita: $0.quantita)]) }
-        } ?? []
-        _gruppi = State(initialValue: gruppiIniziali)
+        if let b = bollettaDaModificare {
+            var gruppiIniziali = gruppiBollettaDaNomi()
+            let lavoriSalvati = b.lavorazioni
+
+            for g in gruppiIniziali.indices {
+                for v in gruppiIniziali[g].voci.indices {
+                    let nomeCompleto = gruppiIniziali[g].voci[v].nome.isEmpty
+                        ? gruppiIniziali[g].nome
+                        : "\(gruppiIniziali[g].nome) \(gruppiIniziali[g].voci[v].nome)"
+                    if let lavoro = lavoriSalvati.first(where: { normalizza($0.nome) == normalizza(nomeCompleto) }) {
+                        gruppiIniziali[g].voci[v].quantita = lavoro.quantita
+                    }
+                }
+            }
+
+            // Mantiene eventuali articoli personalizzati presenti nella bolletta.
+            let nomiStandard = Set(gruppiIniziali.flatMap { g in
+                g.voci.map { v in
+                    v.nome.isEmpty ? g.nome : "\(g.nome) \(v.nome)"
+                }
+            }.map(normalizza))
+
+            for lavoro in lavoriSalvati where !nomiStandard.contains(normalizza(lavoro.nome)) {
+                gruppiIniziali.append(
+                    GruppoLavorazione(
+                        nome: lavoro.nome,
+                        voci: [VoceLavorazione(nome: "", quantita: lavoro.quantita)]
+                    )
+                )
+            }
+
+            _gruppi = State(initialValue: gruppiIniziali)
+        } else {
+            _gruppi = State(initialValue: [])
+        }
     }
 
     var body: some View {
