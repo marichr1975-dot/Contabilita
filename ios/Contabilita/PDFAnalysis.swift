@@ -115,7 +115,9 @@ final class PDFAnalysisStore: ObservableObject {
     }
 
     private func estraiGiorniPDF(_ document: PDFDocument) -> [PDFAnalysisDay] {
-        // Exact article order from the BAGFUL table supplied for testing.
+        // Struttura del prospetto BAGFUL: DATA + 10 colonne articolo.
+        // L'estrazione del testo semplice è usata per NON perdere nessuna data;
+        // le coordinate PDF vengono usate solo per associare le quantità alle colonne.
         let articoli = [
             "MESSENGER BAGPACK",
             "TODAY",
@@ -129,59 +131,96 @@ final class PDFAnalysisStore: ObservableObject {
             "PORTAPC"
         ]
 
+        // Bordi destri delle 10 colonne del file BAGFUL fornito.
+        // I numeri sono allineati a destra nelle celle, quindi questo è più
+        // affidabile del cercare i "centri" tra i soli valori presenti.
+        let rightEdges: [CGFloat] = [
+            151, 202, 253, 304, 355, 406, 457, 558, 639, 690
+        ]
+
         var trovati: [PDFAnalysisDay] = []
+        let dateRegex = try? NSRegularExpression(
+            pattern: #"(?<!\d)(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?!\d)"#
+        )
 
         for pageIndex in 0..<document.pageCount {
             guard let page = document.page(at: pageIndex) else { continue }
+
             let words = paroleConPosizione(page)
             let dateWords = words.filter { dataDaStringa($0.text) != nil }
-            guard !dateWords.isEmpty else { continue }
 
-            // Only numeric words belonging to rows that contain a date.
-            let dateY = dateWords.map { $0.rect.midY }
-            let numericWords = words.filter { word in
-                guard Int(word.text) != nil else { return false }
-                return dateY.contains { abs($0 - word.rect.midY) < 6 }
+            // 1) Le date vengono prese dal testo della pagina, riga per riga.
+            // Questo garantisce che anche una riga con poche/nessuna quantità
+            // non venga scartata.
+            let pageText = page.string ?? ""
+            let nsText = pageText as NSString
+            let matches = dateRegex?.matches(
+                in: pageText,
+                range: NSRange(location: 0, length: nsText.length)
+            ) ?? []
+
+            var dateOccurrences: [(date: Date, text: String)] = []
+            for match in matches {
+                let raw = nsText.substring(with: match.range)
+                if let date = dataDaStringa(raw) {
+                    dateOccurrences.append((date, raw))
+                }
             }
 
-            let centers = centriColonne(numericWords)
-            guard centers.count >= 1 else { continue }
+            // Fallback: se PDFKit non espone la stringa completa ma espone le
+            // parole, usiamo comunque le date trovate con le coordinate.
+            if dateOccurrences.isEmpty {
+                dateOccurrences = dateWords.compactMap {
+                    guard let date = dataDaStringa($0.text) else { return nil }
+                    return (date, $0.text)
+                }
+            }
 
-            for dateWord in dateWords {
-                guard let date = dataDaStringa(dateWord.text) else { continue }
-                let nums = numericWords.filter { abs($0.rect.midY - dateWord.rect.midY) < 6 }
+            // Associa ogni data alla riga PDF più vicina. Non dipendiamo dal
+            // numero di quantità presenti nella riga.
+            for occurrence in dateOccurrences {
+                guard let dateWord = dateWords.first(where: {
+                    dataDaStringa($0.text) == occurrence.date
+                }) else {
+                    // Se non esiste una parola con coordinate, conserviamo
+                    // comunque la data. Le quantità verranno lasciate vuote.
+                    trovati.append(PDFAnalysisDay(date: occurrence.date, rows: []))
+                    continue
+                }
+
+                let rowY = dateWord.rect.midY
+                let nums = words.filter { word in
+                    guard let value = Int(word.text), value >= 0 else { return false }
+                    return abs(word.rect.midY - rowY) < 5
+                }
+
                 var rows: [PDFAnalysisRow] = []
+                for (index, edge) in rightEdges.enumerated() {
+                    guard let token = nums.min(by: {
+                        abs($0.rect.maxX - edge) < abs($1.rect.maxX - edge)
+                    }) else { continue }
 
-                for (index, center) in centers.prefix(articoli.count).enumerated() {
-                    let tolerance: CGFloat = {
-                        if centers.count > 1 {
-                            var distances: [CGFloat] = []
-                            if index > 0 { distances.append(abs(center - centers[index - 1])) }
-                            if index + 1 < centers.count { distances.append(abs(centers[index + 1] - center)) }
-                            if let d = distances.min() { return max(8, d * 0.42) }
-                        }
-                        return 18
-                    }()
-
-                    guard let token = nums.min(by: { abs($0.rect.midX - center) < abs($1.rect.midX - center) }),
-                          abs(token.rect.midX - center) <= tolerance,
+                    // Evita di prendere numeri della colonna DATA o valori
+                    // appartenenti alla colonna successiva.
+                    guard abs(token.rect.maxX - edge) <= 8,
                           let quantity = Int(token.text), quantity > 0 else { continue }
 
                     rows.append(PDFAnalysisRow(article: articoli[index], quantity: quantity))
                 }
 
-                trovati.append(PDFAnalysisDay(date: date, rows: rows))
+                trovati.append(PDFAnalysisDay(date: occurrence.date, rows: rows))
             }
         }
 
-        // Merge duplicate dates if the PDF has more than one page.
+        // Unisce eventuali duplicati della stessa data e ordina dalla più
+        // recente alla più vecchia per la visualizzazione dell'analisi.
         var perData: [Date: [PDFAnalysisRow]] = [:]
         for day in trovati {
             let key = Calendar(identifier: .gregorian).startOfDay(for: day.date)
             perData[key, default: []].append(contentsOf: day.rows)
         }
 
-        return perData.keys.sorted().map {
+        return perData.keys.sorted(by: >).map {
             PDFAnalysisDay(date: $0, rows: perData[$0] ?? [])
         }
     }
