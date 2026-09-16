@@ -8,151 +8,174 @@ struct ExcelAnalysisDay {
 
 final class ExcelAnalysis {
     static func analizza(file: URL) -> [ExcelAnalysisDay]? {
-        guard let archive = try? Archive(url: file, accessMode: .read),
-              let sheetData = leggiFile(archive: archive, path: "xl/worksheets/sheet1.xml") else { return nil }
+        guard file.pathExtension.lowercased() == "xlsx" else { return nil }
 
-        let sharedStrings = leggiSharedStrings(archive: archive)
-        let righe = estraiRigheXML(sheetData, sharedStrings: sharedStrings)
-        guard !righe.isEmpty else { return nil }
+        let archive: Archive
+        do { archive = try Archive(url: file, accessMode: .read) }
+        catch { return nil }
 
-        let normalizza: (String) -> String = { testo in
-            testo.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-                .replacingOccurrences(of: " ", with: "")
-                .replacingOccurrences(of: "_", with: "")
-                .replacingOccurrences(of: "-", with: "")
-        }
+        let shared = sharedStrings(archive)
+        let sheets = archive.filter {
+            $0.path.hasPrefix("xl/worksheets/") && $0.path.hasSuffix(".xml")
+        }.map(\.path).sorted()
 
-        var header = righe[0].map(normalizza)
-        var start = 1
-        if !header.contains(where: { $0.contains("data") }) ||
-           !header.contains(where: { $0.contains("articolo") || $0.contains("modello") || $0.contains("descrizione") || $0.contains("lavorazione") }) {
-            if righe.count > 1 {
-                header = righe[1].map(normalizza)
-                start = 2
-            }
-        }
-
-        let dataIndex = header.firstIndex(where: { $0.contains("data") })
-        let articoloIndex = header.firstIndex(where: { $0.contains("articolo") || $0.contains("modello") || $0.contains("descrizione") || $0.contains("lavorazione") })
-        let quantitaIndex = header.firstIndex(where: { $0.contains("quantita") || $0 == "qta" || $0.contains("pezzi") })
-        guard let di = dataIndex, let ai = articoloIndex, let qi = quantitaIndex else { return nil }
-
-        var gruppi: [Date: [PDFAnalysisRow]] = [:]
-        for riga in righe.dropFirst(start) {
-            guard di < riga.count, ai < riga.count, qi < riga.count,
-                  let data = dataDaValore(riga[di]) else { continue }
-            let articolo = riga[ai].trimmingCharacters(in: .whitespacesAndNewlines)
-            let quantita = Int(riga[qi]) ?? Int(Double(riga[qi].replacingOccurrences(of: ",", with: ".")) ?? -1)
-            guard !articolo.isEmpty, quantita >= 0 else { continue }
-            gruppi[data, default: []].append(PDFAnalysisRow(article: articolo, quantity: quantita))
-        }
-
-        return gruppi.keys.sorted().map { ExcelAnalysisDay(date: $0, rows: gruppi[$0] ?? []) }
-    }
-
-    private static func leggiSharedStrings(archive: Archive) -> [String] {
-        guard let data = leggiFile(archive: archive, path: "xl/sharedStrings.xml"),
-              let xml = String(data: data, encoding: .utf8) else { return [] }
-        let regex = try? NSRegularExpression(pattern: #"<t[^>]*>(.*?)</t>"#, options: [.dotMatchesLineSeparators])
-        guard let regex = regex else { return [] }
-        let ns = xml as NSString
-        return regex.matches(in: xml, range: NSRange(location: 0, length: ns.length)).map {
-            decodeXML(ns.substring(with: $0.range(at: 1)))
-        }
-    }
-
-    private static func leggiFile(archive: Archive, path: String) -> Data? {
-        guard let entry = archive[path] else { return nil }
-        var data = Data()
-        do {
-            _ = try archive.extract(entry) { chunk in data.append(chunk) }
-            return data
-        } catch { return nil }
-    }
-
-    private static func estraiRigheXML(_ data: Data, sharedStrings: [String]) -> [[String]] {
-        guard let xml = String(data: data, encoding: .utf8) else { return [] }
-        let rowRegex = try? NSRegularExpression(pattern: #"<row\b[^>]*>(.*?)</row>"#, options: [.dotMatchesLineSeparators])
-        let cellRegex = try? NSRegularExpression(pattern: #"<c\b([^>]*)>(.*?)</c>"#, options: [.dotMatchesLineSeparators])
-        guard let rowRegex, let cellRegex else { return [] }
-        let ns = xml as NSString
-        var rows: [[String]] = []
-
-        for rowMatch in rowRegex.matches(in: xml, range: NSRange(location: 0, length: ns.length)) {
-            let rowXML = ns.substring(with: rowMatch.range(at: 1))
-            let rowNS = rowXML as NSString
-            var cells: [(Int, String)] = []
-            for cellMatch in cellRegex.matches(in: rowXML, range: NSRange(location: 0, length: rowNS.length)) {
-                let attrs = rowNS.substring(with: cellMatch.range(at: 1))
-                let body = rowNS.substring(with: cellMatch.range(at: 2))
-                let ref = valoreAttributo(attrs, nome: "r") ?? "A1"
-                let type = valoreAttributo(attrs, nome: "t")
-                var testo = valoreTag(body, tag: "v") ?? ""
-                if type == "s", let idx = Int(testo), idx >= 0, idx < sharedStrings.count { testo = sharedStrings[idx] }
-                if type == "inlineStr" { testo = valoreTag(body, tag: "t") ?? testo }
-                cells.append((columnIndex(String(ref.prefix { $0.isLetter })), decodeXML(testo)))
-            }
-            guard let max = cells.map({ $0.0 }).max() else { continue }
-            var row = Array(repeating: "", count: max + 1)
-            for (index, value) in cells { row[index] = value }
-            rows.append(row)
-        }
-        return rows
-    }
-
-    private static func valoreAttributo(_ testo: String, nome: String) -> String? {
-        let escaped = NSRegularExpression.escapedPattern(for: nome)
-        let regex = try? NSRegularExpression(pattern: #"\b"# + escaped + #"=\"([^\"]+)\""#)
-        guard let regex, let match = regex.firstMatch(in: testo, range: NSRange(location: 0, length: (testo as NSString).length)) else { return nil }
-        return (testo as NSString).substring(with: match.range(at: 1))
-    }
-
-    private static func valoreTag(_ testo: String, tag: String) -> String? {
-        let escaped = NSRegularExpression.escapedPattern(for: tag)
-        let regex = try? NSRegularExpression(pattern: #"<"# + escaped + #"[^>]*>(.*?)</"# + escaped + #">"#, options: [.dotMatchesLineSeparators])
-        guard let regex, let match = regex.firstMatch(in: testo, range: NSRange(location: 0, length: (testo as NSString).length)) else { return nil }
-        return (testo as NSString).substring(with: match.range(at: 1))
-    }
-
-    private static func columnIndex(_ letters: String) -> Int {
-        var value = 0
-        for scalar in letters.unicodeScalars { value = value * 26 + Int(scalar.value - 64) }
-        return max(0, value - 1)
-    }
-
-    private static func dataDaValore(_ valore: String) -> Date? {
-        let s = valore.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pattern = #"^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$"#
-        if let re = try? NSRegularExpression(pattern: pattern),
-           let m = re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) {
-            let ns = s as NSString
-            let d = Int(ns.substring(with: m.range(at: 1))) ?? 0
-            let mo = Int(ns.substring(with: m.range(at: 2))) ?? 0
-            var y = Int(ns.substring(with: m.range(at: 3))) ?? 0
-            if y < 100 { y += 2000 }
-            guard (1...31).contains(d), (1...12).contains(mo), (2000...2100).contains(y) else { return nil }
-            var c = DateComponents()
-            c.day = d; c.month = mo; c.year = y
-            return Calendar(identifier: .gregorian).date(from: c)
-        }
-
-        // Excel serial date (1900 date system). Accept only a realistic range,
-        // so quantities or other numbers can never become absurd dates.
-        if let serial = Double(s), serial >= 30000, serial <= 60000 {
-            var base = DateComponents()
-            base.year = 1899; base.month = 12; base.day = 30
-            let calendar = Calendar(identifier: .gregorian)
-            guard let epoch = calendar.date(from: base) else { return nil }
-            return calendar.date(byAdding: .day, value: Int(serial.rounded()), to: epoch)
+        for path in sheets {
+            guard let data = read(archive, path),
+                  let rows = parseRows(data, shared: shared),
+                  let result = parseWorkbook(rows),
+                  !result.isEmpty else { continue }
+            return result
         }
         return nil
     }
 
-    private static func decodeXML(_ value: String) -> String {
-        value.replacingOccurrences(of: "&amp;", with: "&")
-            .replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&apos;", with: "'")
+    private static func parseWorkbook(_ rows: [[String]]) -> [ExcelAnalysisDay]? {
+        func norm(_ s: String) -> String {
+            s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+             .replacingOccurrences(of: " ", with: "")
+             .replacingOccurrences(of: "_", with: "")
+             .replacingOccurrences(of: "-", with: "")
+             .replacingOccurrences(of: ".", with: "")
+        }
+
+        var header = -1
+        var dateCol = -1
+        var articleCols: [(Int,String)] = []
+
+        for (i,row) in rows.enumerated() {
+            guard let d = row.firstIndex(where: {
+                let n=norm($0); return n=="data" || n.contains("data")
+            }) else { continue }
+
+            var cols:[(Int,String)] = []
+            for (j,v) in row.enumerated() where j != d {
+                let name=v.trimmingCharacters(in:.whitespacesAndNewlines)
+                let n=norm(name)
+                guard !name.isEmpty,
+                      !n.contains("prezzounitario"),
+                      !n.contains("totalepezzi"),
+                      !n.contains("totaleeuro"),
+                      !n.contains("totalegenerale") else { continue }
+                cols.append((j,name))
+            }
+            if !cols.isEmpty { header=i; dateCol=d; articleCols=cols; break }
+        }
+
+        guard header >= 0 else { return nil }
+
+        var prices:[Int:Double]=[:]
+        if header > 0 {
+            for (c,_) in articleCols where c < rows[header-1].count {
+                if let n=number(rows[header-1][c]) { prices[c]=n }
+            }
+        }
+
+        var grouped:[Date:[PDFAnalysisRow]] = [:]
+        for row in rows.dropFirst(header+1) {
+            guard dateCol < row.count, let d=date(row[dateCol]) else { continue }
+            var day:[PDFAnalysisRow]=[]
+            for (c,name) in articleCols where c < row.count {
+                guard let q=number(row[c]), q > 0 else { continue }
+                let quantity=Int(q.rounded())
+                guard quantity > 0 else { continue }
+                let price=prices[c]
+                day.append(PDFAnalysisRow(article:name, quantity:quantity,
+                                          unitPrice:price,
+                                          total:price.map{Double(quantity)*$0}))
+            }
+            if !day.isEmpty { grouped[Calendar.current.startOfDay(for:d),default:[]] += day }
+        }
+
+        return grouped.keys.sorted().map { ExcelAnalysisDay(date:$0,rows:grouped[$0] ?? []) }
+    }
+
+    private static func number(_ s:String)->Double? {
+        let x=s.trimmingCharacters(in:.whitespacesAndNewlines)
+            .replacingOccurrences(of:"€",with:"").replacingOccurrences(of:" ",with:"")
+        if let n=Double(x){return n}
+        return Double(x.replacingOccurrences(of:".",with:"").replacingOccurrences(of:",",with:"."))
+    }
+
+    private static func date(_ s:String)->Date? {
+        let x=s.trimmingCharacters(in:.whitespacesAndNewlines)
+        let f=DateFormatter(); f.locale=Locale(identifier:"it_IT")
+        for fmt in ["dd/MM/yyyy","dd-MM-yyyy","dd.MM.yyyy","d/M/yyyy","d-M-yyyy","d.M.yyyy"] {
+            f.dateFormat=fmt
+            if let d=f.date(from:x){return d}
+        }
+        if let serial=Double(x), serial >= 30000, serial <= 60000 {
+            var c=DateComponents(); c.year=1899;c.month=12;c.day=30
+            if let base=Calendar(identifier:.gregorian).date(from:c) {
+                return Calendar(identifier:.gregorian).date(byAdding:.day,value:Int(serial.rounded()),to:base)
+            }
+        }
+        return nil
+    }
+
+    private static func read(_ a:Archive,_ path:String)->Data? {
+        guard let e=a[path] else{return nil}; var d=Data()
+        do { try a.extract(e){d.append($0)}; return d } catch{return nil}
+    }
+
+    private static func sharedStrings(_ a:Archive)->[String] {
+        guard let d=read(a,"xl/sharedStrings.xml"),
+              let x=String(data:d,encoding:.utf8) else{return[]}
+        let si=try?NSRegularExpression(pattern:#"<si\b[^>]*>(.*?)</si>"#,options:.dotMatchesLineSeparators)
+        let tr=try?NSRegularExpression(pattern:#"<t\b[^>]*>(.*?)</t>"#,options:.dotMatchesLineSeparators)
+        guard let si,tr else{return[]}
+        let ns=x as NSString; var out:[String]=[]
+        for m in si.matches(in:x,range:NSRange(location:0,length:ns.length)){
+            let b=ns.substring(with:m.range(at:1)) as NSString; var t=""
+            for tm in tr.matches(in:b as String,range:NSRange(location:0,length:b.length)){
+                t += xml(b.substring(with:tm.range(at:1)))
+            }
+            out.append(t)
+        }
+        return out
+    }
+
+    private static func parseRows(_ d:Data,shared:[String])->[[String]]? {
+        guard let x=String(data:d,encoding:.utf8) else{return nil}
+        let rr=try?NSRegularExpression(pattern:#"<row\b[^>]*>(.*?)</row>"#,options:.dotMatchesLineSeparators)
+        let cr=try?NSRegularExpression(pattern:#"<c\b([^>]*)>(.*?)</c>"#,options:.dotMatchesLineSeparators)
+        guard let rr,cr else{return nil}
+        let ns=x as NSString; var out:[[String]]=[]
+        for rm in rr.matches(in:x,range:NSRange(location:0,length:ns.length)){
+            let body=ns.substring(with:rm.range(at:1)) as NSString
+            var cells:[(Int,String)]=[]
+            for cm in cr.matches(in:body as String,range:NSRange(location:0,length:body.length)){
+                let a=body.substring(with:cm.range(at:1)); let b=body.substring(with:cm.range(at:2))
+                let ref=attr(a,"r") ?? "A1"; let type=attr(a,"t")
+                var v=tag(b,"v") ?? ""
+                if type=="s",let i=Int(v),i>=0,i<shared.count{v=shared[i]}
+                if type=="inlineStr"{v=tag(b,"t") ?? v}
+                cells.append((column(String(ref.prefix{$0.isLetter})),xml(v)))
+            }
+            guard let max=cells.map({$0.0}).max() else{continue}
+            var row=Array(repeating:"",count:max+1)
+            for (i,v) in cells{row[i]=v}; out.append(row)
+        }
+        return out
+    }
+
+    private static func attr(_ s:String,_ n:String)->String? {
+        let r=try?NSRegularExpression(pattern:#"\b"# + NSRegularExpression.escapedPattern(for:n)+#"="([^"]+)""#)
+        guard let r,m=r.firstMatch(in:s,range:NSRange(s.startIndex...,in:s)) else{return nil}
+        return (s as NSString).substring(with:m.range(at:1))
+    }
+    private static func tag(_ s:String,_ n:String)->String? {
+        let r=try?NSRegularExpression(pattern:#"<"# + NSRegularExpression.escapedPattern(for:n)+#"[^>]*>(.*?)</"# + NSRegularExpression.escapedPattern(for:n)+#">"#,options:.dotMatchesLineSeparators)
+        guard let r,m=r.firstMatch(in:s,range:NSRange(s.startIndex...,in:s)) else{return nil}
+        return (s as NSString).substring(with:m.range(at:1))
+    }
+    private static func column(_ s:String)->Int {
+        var v=0
+        for u in s.uppercased().unicodeScalars where u.value>=65 && u.value<=90 {v=v*26+Int(u.value-64)}
+        return max(0,v-1)
+    }
+    private static func xml(_ s:String)->String {
+        s.replacingOccurrences(of:"&amp;",with:"&").replacingOccurrences(of:"&lt;",with:"<")
+         .replacingOccurrences(of:"&gt;",with:">").replacingOccurrences(of:"&quot;",with:"\"")
+         .replacingOccurrences(of:"&apos;",with:"'")
     }
 }

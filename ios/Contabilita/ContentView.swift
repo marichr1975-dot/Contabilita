@@ -204,7 +204,7 @@ struct ContentView: View {
             pdfImportati = 0
             return
         }
-        let folder = container.appendingPathComponent("PDFImportati", isDirectory: true)
+        let folder = container.appendingPathComponent("FileAzienda", isDirectory: true)
         let files = (try? FileManager.default.contentsOfDirectory(
             at: folder,
             includingPropertiesForKeys: nil
