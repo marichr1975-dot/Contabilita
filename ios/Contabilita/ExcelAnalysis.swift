@@ -160,12 +160,12 @@ final class ExcelAnalysis {
 
     private static func attr(_ s:String,_ n:String)->String? {
         let r=try?NSRegularExpression(pattern:#"\b"# + NSRegularExpression.escapedPattern(for:n)+#"="([^"]+)""#)
-        guard let r,m=r.firstMatch(in:s,range:NSRange(s.startIndex...,in:s)) else{return nil}
+        guard let m = r.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else { return nil }
         return (s as NSString).substring(with:m.range(at:1))
     }
     private static func tag(_ s:String,_ n:String)->String? {
         let r=try?NSRegularExpression(pattern:#"<"# + NSRegularExpression.escapedPattern(for:n)+#"[^>]*>(.*?)</"# + NSRegularExpression.escapedPattern(for:n)+#">"#,options:.dotMatchesLineSeparators)
-        guard let r,m=r.firstMatch(in:s,range:NSRange(s.startIndex...,in:s)) else{return nil}
+        guard let m = r.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else { return nil }
         return (s as NSString).substring(with:m.range(at:1))
     }
     private static func column(_ s:String)->Int {
