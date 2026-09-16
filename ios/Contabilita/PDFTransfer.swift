@@ -89,14 +89,14 @@ struct PDFLocaliView: View {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 48))
                         .foregroundColor(.teal)
-                    Text("Nessun PDF ricevuto")
+                    Text("Nessun file azienda ricevuto")
                         .font(.title2)
                     Text("Da WhatsApp o File: Condividi → Contabilità.\nPoi riapri Contabilità.")
                         .multilineTextAlignment(.center)
                         .foregroundColor(.secondary)
                     Spacer()
                 } else {
-                    Text("PDF RICEVUTI")
+                    Text("FILE AZIENDA RICEVUTI")
                         .font(.title2)
                         .fontWeight(.semibold)
                         .padding(.top, 8)
@@ -122,7 +122,7 @@ struct PDFLocaliView: View {
                 }
             }
             .padding(18)
-            .navigationTitle("PDF azienda")
+            .navigationTitle("File azienda")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
