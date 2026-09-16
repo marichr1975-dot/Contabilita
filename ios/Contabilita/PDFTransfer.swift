@@ -15,14 +15,14 @@ final class PDFTransferStore: ObservableObject {
 
     private var folder: URL {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documents.appendingPathComponent("PDFImportati", isDirectory: true)
+        return documents.appendingPathComponent("FileAzienda", isDirectory: true)
     }
 
     func importaDaCondividi() {
         ricarica()
 
         let pasteboard = UIPasteboard.general
-        guard let data = pasteboard.data(forPasteboardType: Self.companyFilePasteboardType) ?? pasteboard.data(forPasteboardType: Self.pdfPasteboardType),
+        guard let data = pasteboard.data(forPasteboardType: Self.companyFilePasteboardType),
               data.count > 4 else {
             return
         }
@@ -89,14 +89,14 @@ struct PDFLocaliView: View {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 48))
                         .foregroundColor(.teal)
-                    Text("Nessun PDF ricevuto")
+                    Text("Nessun file aziendale ricevuto")
                         .font(.title2)
                     Text("Da WhatsApp o File: Condividi → Contabilità.\nPoi riapri Contabilità.")
                         .multilineTextAlignment(.center)
                         .foregroundColor(.secondary)
                     Spacer()
                 } else {
-                    Text("PDF RICEVUTI")
+                    Text("FILE AZIENDA")
                         .font(.title2)
                         .fontWeight(.semibold)
                         .padding(.top, 8)
