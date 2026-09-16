@@ -114,7 +114,7 @@ final class ExcelAnalysis {
 
     private static func read(_ a:Archive,_ path:String)->Data? {
         guard let e=a[path] else{return nil}; var d=Data()
-        do { try a.extract(e){d.append($0)}; return d } catch{return nil}
+        do { try a.extract(e, consumer: { chunk in d.append(chunk) }); return d } catch { return nil }
     }
 
     private static func sharedStrings(_ a:Archive)->[String] {
@@ -122,7 +122,7 @@ final class ExcelAnalysis {
               let x=String(data:d,encoding:.utf8) else{return[]}
         let si=try?NSRegularExpression(pattern:#"<si\b[^>]*>(.*?)</si>"#,options:.dotMatchesLineSeparators)
         let tr=try?NSRegularExpression(pattern:#"<t\b[^>]*>(.*?)</t>"#,options:.dotMatchesLineSeparators)
-        guard let si,tr else{return[]}
+        guard let si = si, let tr = tr else { return [] }
         let ns=x as NSString; var out:[String]=[]
         for m in si.matches(in:x,range:NSRange(location:0,length:ns.length)){
             let b=ns.substring(with:m.range(at:1)) as NSString; var t=""
@@ -160,12 +160,12 @@ final class ExcelAnalysis {
 
     private static func attr(_ s:String,_ n:String)->String? {
         let r=try?NSRegularExpression(pattern:#"\b"# + NSRegularExpression.escapedPattern(for:n)+#"="([^"]+)""#)
-        guard let m = r.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else { return nil }
+        guard let regex = r, let m = regex.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else { return nil }
         return (s as NSString).substring(with:m.range(at:1))
     }
     private static func tag(_ s:String,_ n:String)->String? {
         let r=try?NSRegularExpression(pattern:#"<"# + NSRegularExpression.escapedPattern(for:n)+#"[^>]*>(.*?)</"# + NSRegularExpression.escapedPattern(for:n)+#">"#,options:.dotMatchesLineSeparators)
-        guard let m = r.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else { return nil }
+        guard let regex = r, let m = regex.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else { return nil }
         return (s as NSString).substring(with:m.range(at:1))
     }
     private static func column(_ s:String)->Int {
