@@ -1,88 +1,139 @@
 import Foundation
-import UniformTypeIdentifiers
+import SwiftUI
+import UIKit
 
-struct CompanyFile {
-    let url: URL
-    let name: String
-    let type: CompanyFileType
-    let importedAt: Date
-}
+final class PDFTransferStore: ObservableObject {
+    static let pdfPasteboardType = "com.gotrail.contabilita.pdf"
+    static let companyFilePasteboardType = "com.gotrail.contabilita.companyfile"
+    static let namePasteboardType = "com.gotrail.contabilita.name"
 
-enum CompanyFileType {
-    case excel
-    case pdf
-    case unknown
-}
+    @Published private(set) var files: [URL] = []
 
-final class PDFTransfer {
-
-    static let appGroup = "group.com.gotrail.contabilita"
-    static let folderName = "IncomingCompanyFile"
-
-    private static var folderURL: URL? {
-        FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroup
-        )?.appendingPathComponent(folderName, isDirectory: true)
+    init() {
+        ricarica()
     }
 
-    /// Restituisce esclusivamente il file ricevuto dall'ultima condivisione.
-    /// Non usa più vecchi PDF presenti in cache o chiavi legacy.
-    static func latestCompanyFile() -> CompanyFile? {
-        guard let folder = folderURL else { return nil }
+    private var folder: URL {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return documents.appendingPathComponent("PDFImportati", isDirectory: true)
+    }
 
+    func importaDaCondividi() {
+        ricarica()
+
+        let pasteboard = UIPasteboard.general
+        guard let data = pasteboard.data(forPasteboardType: Self.companyFilePasteboardType) ?? pasteboard.data(forPasteboardType: Self.pdfPasteboardType),
+              data.count > 4 else {
+            return
+        }
+
+        let name = pasteboard.value(forPasteboardType: Self.namePasteboardType) as? String ?? "prospetto"
+        salva(data: data, nome: name)
+
+        pasteboard.items = []
+        ricarica()
+    }
+
+    func elimina(file: URL) {
+        try? FileManager.default.removeItem(at: file)
+        ricarica()
+    }
+
+    func ricarica() {
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        files = ((try? fm.contentsOfDirectory(
             at: folder,
-            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+            includingPropertiesForKeys: [.creationDateKey],
             options: [.skipsHiddenFiles]
-        ) else {
-            return nil
-        }
-
-        let valid = files.filter {
-            let ext = $0.pathExtension.lowercased()
-            return ext == "xlsx" || ext == "xls" || ext == "pdf"
-        }
-
-        guard let file = valid.max(by: {
-            let d1 = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            let d2 = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-            return d1 < d2
-        }) else {
-            return nil
-        }
-
-        let ext = file.pathExtension.lowercased()
-        let type: CompanyFileType = ext == "xlsx" || ext == "xls" ? .excel : (ext == "pdf" ? .pdf : .unknown)
-
-        let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
-
-        return CompanyFile(url: file, name: file.lastPathComponent, type: type, importedAt: date)
+        )) ?? [])
+        .filter { ["pdf", "xlsx", "xls"].contains($0.pathExtension.lowercased()) }
+        .sorted { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }
     }
 
-    static func consumeIncomingFile() -> CompanyFile? {
-        guard let file = latestCompanyFile() else { return nil }
+    private func salva(data: Data, nome: String) {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
 
-        let defaults = UserDefaults(suiteName: appGroup)
-        defaults?.removeObject(forKey: "incomingCompanyFilename")
-        defaults?.removeObject(forKey: "incomingCompanyPath")
-        defaults?.removeObject(forKey: "incomingCompanyType")
-        defaults?.removeObject(forKey: "incomingCompanyTimestamp")
-        defaults?.synchronize()
+        let base = nome
+            .deletingPathExtension
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let safe = base.isEmpty ? "prospetto" : base
+        let estensione = (nome as NSString).pathExtension.isEmpty ? "pdf" : (nome as NSString).pathExtension
+        let url = folder.appendingPathComponent("\(safe)-\(UUID().uuidString.prefix(8)).\(estensione)")
 
-        return file
-    }
-
-    static func isExcel(_ url: URL) -> Bool {
-        let ext = url.pathExtension.lowercased()
-        if ext == "xlsx" || ext == "xls" { return true }
-        if let type = UTType(filenameExtension: ext) {
-            return type.conforms(to: .spreadsheet)
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // Il file resta sul pasteboard e verrà ritentato alla prossima apertura.
         }
-        return false
     }
+}
 
-    static func isPDF(_ url: URL) -> Bool {
-        url.pathExtension.lowercased() == "pdf"
+private extension String {
+    var deletingPathExtension: String {
+        (self as NSString).deletingPathExtension
+    }
+}
+
+struct PDFLocaliView: View {
+    @ObservedObject var store: PDFTransferStore
+    @Environment(\.presentationMode) private var presentationMode
+    @State private var pdfDaMostrare: URL?
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 18) {
+                if store.files.isEmpty {
+                    Spacer()
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 48))
+                        .foregroundColor(.teal)
+                    Text("Nessun PDF ricevuto")
+                        .font(.title2)
+                    Text("Da WhatsApp o File: Condividi → Contabilità.\nPoi riapri Contabilità.")
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                } else {
+                    Text("PDF RICEVUTI")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .padding(.top, 8)
+
+                    List(store.files, id: \.self) { file in
+                        Button {
+                            pdfDaMostrare = file
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "doc.fill")
+                                    .foregroundColor(.teal)
+                                Text(file.lastPathComponent)
+                                    .lineLimit(2)
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 8)
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .padding(18)
+            .navigationTitle("PDF azienda")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
+                }
+            }
+            .onAppear { store.importaDaCondividi() }
+            .sheet(item: $pdfDaMostrare) { file in
+                PDFViewer(url: file)
+            }
+        }
+        .navigationViewStyle(.stack)
     }
 }

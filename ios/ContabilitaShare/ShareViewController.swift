@@ -2,91 +2,175 @@ import UIKit
 import UniformTypeIdentifiers
 
 final class ShareViewController: UIViewController {
+    private let pdfType = "com.gotrail.contabilita.pdf"
+    private let companyFileType = "com.gotrail.contabilita.companyfile"
+    private let nameType = "com.gotrail.contabilita.name"
+    private var handled = false
+    private var saved = false
 
-    private let appGroup = "group.com.gotrail.contabilita"
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
         view.backgroundColor = .systemBackground
-        receiveIncomingFile()
+        riceviPDF()
     }
 
-    private func receiveIncomingFile() {
-        guard let extensionContext else {
-            finish()
+    private func riceviPDF() {
+        guard !handled else { return }
+        guard let items = extensionContext?.inputItems as? [NSExtensionItem] else {
+            termina()
             return
         }
 
-        let items = extensionContext.inputItems.compactMap { $0 as? NSExtensionItem }
-
-        for item in items {
-            guard let providers = item.attachments else { continue }
-
-            for provider in providers {
-                let type: UTType
-                if provider.hasItemConformingToTypeIdentifier(UTType.spreadsheet.identifier) {
-                    type = .spreadsheet
-                } else if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
-                    type = .pdf
-                } else {
-                    continue
-                }
-
-                provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { [weak self] url, error in
-                    guard let self, let url, error == nil else {
-                        DispatchQueue.main.async { self?.finish() }
-                        return
-                    }
-
-                    do {
-                        let fm = FileManager.default
-                        guard let container = fm.containerURL(
-                            forSecurityApplicationGroupIdentifier: self.appGroup
-                        ) else {
-                            DispatchQueue.main.async { self.finish() }
-                            return
-                        }
-
-                        let folder = container.appendingPathComponent("IncomingCompanyFile", isDirectory: true)
-                        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-
-                        // Elimina SEMPRE il file precedente. Non deve mai riapparire
-                        // un vecchio PDF quando viene condiviso un nuovo Excel.
-                        if let old = try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {
-                            for file in old {
-                                try? fm.removeItem(at: file)
-                            }
-                        }
-
-                        let originalName = url.lastPathComponent
-                        let destination = folder.appendingPathComponent(originalName)
-
-                        try fm.copyItem(at: url, to: destination)
-
-                        let defaults = UserDefaults(suiteName: self.appGroup)
-                        defaults?.set(originalName, forKey: "incomingCompanyFilename")
-                        defaults?.set(destination.path, forKey: "incomingCompanyPath")
-                        defaults?.set(type == .spreadsheet ? "xlsx" : "pdf", forKey: "incomingCompanyType")
-                        defaults?.set(Date().timeIntervalSince1970, forKey: "incomingCompanyTimestamp")
-                        defaults?.synchronize()
-
-                        DispatchQueue.main.async {
-                            self.finish()
-                        }
-                    } catch {
-                        DispatchQueue.main.async {
-                            self.finish()
-                        }
-                    }
-                }
-                return
-            }
+        let providers = items.flatMap { $0.attachments ?? [] }
+        guard let provider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) ||
+            $0.hasItemConformingToTypeIdentifier(UTType.spreadsheet.identifier) ||
+            $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) ||
+            $0.hasItemConformingToTypeIdentifier(UTType.data.identifier)
+        }) else {
+            termina()
+            return
         }
 
-        finish()
+        handled = true
+        carica(provider: provider)
     }
 
-    private func finish() {
-        extensionContext?.completeRequest(returningItems: nil)
+    private func carica(provider: NSItemProvider) {
+        if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
+            provider.loadFileRepresentation(forTypeIdentifier: UTType.pdf.identifier) { [weak self] url, _ in
+                if let url = url, let data = try? Data(contentsOf: url), self?.salvaSuPasteboard(data: data, nome: url.lastPathComponent) == true {
+                    self?.fileSalvato(nome: url.lastPathComponent)
+                } else {
+                    self?.caricaComeDati(provider: provider)
+                }
+            }
+            return
+        }
+
+        if provider.hasItemConformingToTypeIdentifier(UTType.spreadsheet.identifier) {
+            provider.loadFileRepresentation(forTypeIdentifier: UTType.spreadsheet.identifier) { [weak self] url, _ in
+                if let url = url, let data = try? Data(contentsOf: url), self?.salvaSuPasteboard(data: data, nome: url.lastPathComponent) == true {
+                    self?.fileSalvato(nome: url.lastPathComponent)
+                } else {
+                    self?.caricaComeDati(provider: provider)
+                }
+            }
+            return
+        }
+
+        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { [weak self] item, _ in
+                if let url = item as? URL,
+                   let data = try? Data(contentsOf: url),
+                   self?.salvaSuPasteboard(data: data, nome: url.lastPathComponent) == true {
+                    self?.fileSalvato(nome: url.lastPathComponent)
+                } else {
+                    self?.caricaComeDati(provider: provider)
+                }
+            }
+            return
+        }
+
+        caricaComeDati(provider: provider)
+    }
+
+    private func caricaComeDati(provider: NSItemProvider) {
+        let type: String
+        if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
+            type = UTType.pdf.identifier
+        } else if provider.hasItemConformingToTypeIdentifier(UTType.spreadsheet.identifier) {
+            type = UTType.spreadsheet.identifier
+        } else {
+            type = UTType.data.identifier
+        }
+
+        provider.loadDataRepresentation(forTypeIdentifier: type) { [weak self] data, _ in
+            guard let self = self, let data = data else {
+                return
+            }
+            _ = self.salvaSuPasteboard(data: data, nome: "prospetto")
+            self.fileSalvato(nome: "prospetto")
+        }
+    }
+
+    private func salvaSuPasteboard(data: Data, nome: String) -> Bool {
+        guard data.count > 4 else { return false }
+
+        UIPasteboard.general.setItems([
+            [
+                companyFileType: data,
+                pdfType: data,
+                nameType: nome
+            ]
+        ], options: [
+            .expirationDate: Date(timeIntervalSinceNow: 15 * 60),
+            .localOnly: false
+        ])
+        return true
+    }
+
+    private func fileSalvato(nome: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.saved = true
+            self.mostraPulsanteApri()
+        }
+    }
+
+    private func apriContabilita() {
+        guard let url = URL(string: "contabilita://import") else {
+            mostraPulsanteApri()
+            return
+        }
+
+        extensionContext?.open(url) { [weak self] success in
+            DispatchQueue.main.async {
+                if success {
+                    self?.termina()
+                } else {
+                    self?.mostraPulsanteApri()
+                }
+            }
+        }
+    }
+
+    private func mostraPulsanteApri() {
+        view.subviews.forEach { $0.removeFromSuperview() }
+
+        let label = UILabel()
+        label.text = "File ricevuto in Contabilità"
+        label.font = .preferredFont(forTextStyle: .headline)
+        label.textAlignment = .center
+
+        let button = UIButton(type: .system)
+        button.setTitle("APRI CONTABILITÀ", for: .normal)
+        button.titleLabel?.font = .boldSystemFont(ofSize: 18)
+        button.addTarget(self, action: #selector(apriContabilitaManuale), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [label, button])
+        stack.axis = .vertical
+        stack.spacing = 24
+        stack.alignment = .fill
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+    }
+
+    @objc private func apriContabilitaManuale() {
+        guard let url = URL(string: "contabilita://import") else { return }
+        extensionContext?.open(url) { [weak self] success in
+            if success {
+                DispatchQueue.main.async { self?.termina() }
+            }
+        }
+    }
+
+    private func termina() {
+        extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
     }
 }
