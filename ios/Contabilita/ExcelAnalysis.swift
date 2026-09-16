@@ -138,7 +138,7 @@ final class ExcelAnalysis {
         guard let x=String(data:d,encoding:.utf8) else{return nil}
         let rr=try?NSRegularExpression(pattern:#"<row\b[^>]*>(.*?)</row>"#,options:.dotMatchesLineSeparators)
         let cr=try?NSRegularExpression(pattern:#"<c\b([^>]*)>(.*?)</c>"#,options:.dotMatchesLineSeparators)
-        guard let rr,cr else{return nil}
+        guard let rr = rr, let cr = cr else { return nil }
         let ns=x as NSString; var out:[[String]]=[]
         for rm in rr.matches(in:x,range:NSRange(location:0,length:ns.length)){
             let body=ns.substring(with:rm.range(at:1)) as NSString
