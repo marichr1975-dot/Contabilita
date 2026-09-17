@@ -31,9 +31,7 @@ struct Bolletta: Identifiable, Codable {
 
 final class Archivio: ObservableObject {
     @Published var bollette: [Bolletta] = []
-    // Ordine e nomi ufficiali della bolletta aziendale.
-    // Devono rimanere identici all'Excel per rendere immediato il confronto.
-    static let articoliAzienda: [String] = [
+    @Published var nomiLavorazioni: [String] = [
         "MESSENGER",
         "BAGPACK",
         "TODAY",
@@ -47,8 +45,6 @@ final class Archivio: ObservableObject {
         "PORTAPC"
     ]
 
-    @Published var nomiLavorazioni: [String] = Archivio.articoliAzienda
-
     private let bolletteKey = "contabilita_bollette"
     private let nomiKey = "contabilita_nomi_lavorazioni"
 
@@ -61,11 +57,11 @@ final class Archivio: ObservableObject {
            let value = try? JSONDecoder().decode([Bolletta].self, from: data) {
             bollette = value
         }
-        // La maschera segue sempre l'ordine dell'Excel aziendale.
-        // Non recuperiamo il vecchio elenco personalizzato perché potrebbe
-        // avere ordine o nomi diversi da quelli usati nel file dell'azienda.
-        nomiLavorazioni = Archivio.articoliAzienda
-        salvaDati()
+        if let data = UserDefaults.standard.data(forKey: nomiKey),
+           let value = try? JSONDecoder().decode([String].self, from: data),
+           !value.isEmpty {
+            nomiLavorazioni = value
+        }
     }
 
     func salvaDati() {
@@ -344,15 +340,13 @@ struct GruppoLavorazione: Identifiable {
 }
 
 func gruppiBollettaDaNomi() -> [GruppoLavorazione] {
-    // Una riga = un articolo dell'Excel, nello stesso identico ordine e con
-    // lo stesso identico testo. Questo vale sia per NUOVA BOLLETTA sia per
-    // MODIFICA BOLLETTA.
-    Archivio.articoliAzienda.map { nome in
-        GruppoLavorazione(
-            nome: nome,
-            voci: [VoceLavorazione(nome: "")]
-        )
-    }
+    // Ordine e nomi presi direttamente dal file Excel aziendale.
+    let articoli = [
+        "MESSENGER", "BAGPACK", "TODAY", "ACTIVITY", "ZAINI MARIN",
+        "CLASSY", "ZAINO PRO", "case marina", "MONEYFUL",
+        "BORSA IN STOFFA", "PORTAPC"
+    ]
+    return articoli.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) }
 }
 
 struct NuovaBollettaView: View {
@@ -497,11 +491,6 @@ struct NuovaBollettaView: View {
                             gruppoView(g, proxy: proxy)
                         }
 
-                        // Elenco fisso: deve restare uguale all'ordine dell'Excel aziendale.
-                        Text("Ordine articoli uguale al file aziendale")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
-                            .padding(.vertical, 4)
                     }
                     .padding(12)
                 }
@@ -768,7 +757,11 @@ struct DatiAnalizzatiView: View {
         }
         var nostraMap: [String: Int] = [:]
         for lavoro in nostra.lavorazioni {
-            nostraMap[normalizza(lavoro.nome), default: 0] += Int(lavoro.quantita) ?? 0
+            let quantita = Int(lavoro.quantita) ?? 0
+            // Le celle vuote/zero dell'app equivalgono alle celle vuote
+            // dell'Excel aziendale: non devono creare una differenza.
+            guard quantita > 0 else { continue }
+            nostraMap[normalizza(lavoro.nome), default: 0] += quantita
         }
         return (true, nostraMap == aziendaMap, false)
     }

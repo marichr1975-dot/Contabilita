@@ -131,8 +131,8 @@ final class PDFAnalysisStore: ObservableObject {
 
     private func estraiGiorniPDF(_ document: PDFDocument) -> [PDFAnalysisDay] {
         let articoli = [
-            "MESSENGER BAGPACK", "TODAY", "ACTIVITY", "ZAINI MARIN", "CLASSY",
-            "ZAINO PRO", "CASE MARINA", "MONEYFUL", "BORSA IN STOFFA", "PORTAPC"
+            "MESSENGER", "BAGPACK", "TODAY", "ACTIVITY", "ZAINI MARIN",
+            "CLASSY", "ZAINO PRO", "case marina", "MONEYFUL", "BORSA IN STOFFA", "PORTAPC"
         ]
 
         // Centri reali delle 10 colonne del prospetto BAGFUL.
