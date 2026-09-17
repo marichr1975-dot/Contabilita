@@ -359,6 +359,8 @@ struct NuovaBollettaView: View {
     @State private var gruppi: [GruppoLavorazione] = []
     @FocusState private var rigaAttiva: Int?
     @State private var mostraConfermaCancella = false
+    @State private var nuovoArticolo = ""
+    @State private var mostraAggiungiArticolo = false
 
     init(archivio: Archivio, bollettaDaModificare: Bolletta? = nil) {
         self.archivio = archivio
@@ -403,7 +405,11 @@ struct NuovaBollettaView: View {
 
             _gruppi = State(initialValue: gruppiIniziali)
         } else {
-            _gruppi = State(initialValue: [])
+            var iniziali = gruppiBollettaDaNomi()
+            let standard = Set(iniziali.map { $0.nome.lowercased() })
+            let personalizzati = archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }
+            iniziali.append(contentsOf: personalizzati.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
+            _gruppi = State(initialValue: iniziali)
         }
     }
 
@@ -449,9 +455,33 @@ struct NuovaBollettaView: View {
         } message: {
             Text("Vuoi cancellare definitivamente questa bolletta?")
         }
+        .sheet(isPresented: $mostraAggiungiArticolo) {
+            NavigationView {
+                Form {
+                    Section("NUOVO ARTICOLO") {
+                        TextField("Nome articolo", text: $nuovoArticolo)
+                            .textInputAutocapitalization(.sentences)
+                    }
+                    Section {
+                        Button("AGGIUNGI") {
+                            aggiungiArticolo()
+                        }
+                        .disabled(nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .navigationTitle("Aggiungi articolo")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Annulla") { mostraAggiungiArticolo = false }
+                    }
+                }
+            }
+        }
         .onAppear {
             if gruppi.isEmpty && bollettaDaModificare == nil {
                 gruppi = gruppiBollettaDaNomi()
+                let standard = Set(gruppi.map { $0.nome.lowercased() })
+                gruppi.append(contentsOf: archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
             }
         }
     }
@@ -461,9 +491,21 @@ struct NuovaBollettaView: View {
             Text("SCEGLI LA DATA")
                 .font(.title2)
 
-            DatePicker("Data", selection: $data, displayedComponents: .date)
-                .datePickerStyle(.graphical)
-                .labelsHidden()
+            HStack(spacing: 12) {
+                Image(systemName: "calendar")
+                    .font(.title2)
+                DatePicker("Data", selection: $data, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .environment(\.locale, Locale(identifier: "it_IT"))
+                    .labelsHidden()
+                Spacer()
+            }
+            .padding()
+            .background(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.35)))
+
+            Text(data.formatted(.dateTime.day().month(.wide).year()))
+                .font(.title3)
+                .environment(\.locale, Locale(identifier: "it_IT"))
 
             Button {
                 dataConfermata = true
@@ -490,6 +532,18 @@ struct NuovaBollettaView: View {
                         ForEach(gruppi.indices, id: \.self) { g in
                             gruppoView(g, proxy: proxy)
                         }
+
+                        Button { mostraAggiungiArticolo = true } label: {
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                Text("AGGIUNGI ARTICOLO")
+                                    .fontWeight(.semibold)
+                            }
+                            .font(.title3)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                        }
+                        .buttonStyle(.borderedProminent)
 
                     }
                     .padding(12)
@@ -586,6 +640,21 @@ struct NuovaBollettaView: View {
         else { rigaAttiva = 1 }
     }
 
+    private func aggiungiArticolo() {
+        let nome = nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nome.isEmpty else { return }
+        let esiste = gruppi.contains { $0.nome.caseInsensitiveCompare(nome) == .orderedSame }
+        guard !esiste else {
+            nuovoArticolo = ""
+            mostraAggiungiArticolo = false
+            return
+        }
+        archivio.aggiungiLavorazione(nome)
+        gruppi.append(GruppoLavorazione(nome: nome, voci: [VoceLavorazione(nome: "")]))
+        nuovoArticolo = ""
+        mostraAggiungiArticolo = false
+    }
+
     private func salva() {
         var lista: [Lavorazione] = []
         for g in gruppi {
@@ -613,9 +682,19 @@ struct SelezionaDataModificaView: View {
                 Text("SCEGLI LA DATA")
                     .font(.title2)
 
-                DatePicker("Data", selection: $data, displayedComponents: .date)
-                    .datePickerStyle(.graphical)
-                    .labelsHidden()
+                HStack(spacing: 12) {
+                    Image(systemName: "calendar").font(.title2)
+                    DatePicker("Data", selection: $data, displayedComponents: .date)
+                        .datePickerStyle(.compact)
+                        .environment(\.locale, Locale(identifier: "it_IT"))
+                        .labelsHidden()
+                    Spacer()
+                }
+                .padding()
+                .background(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.35)))
+                Text(data.formatted(.dateTime.day().month(.wide).year()))
+                    .font(.title3)
+                    .environment(\.locale, Locale(identifier: "it_IT"))
 
                 Button("OK") {
                     cercaBollette()
