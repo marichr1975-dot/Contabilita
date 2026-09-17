@@ -31,18 +31,23 @@ struct Bolletta: Identifiable, Codable {
 
 final class Archivio: ObservableObject {
     @Published var bollette: [Bolletta] = []
-    @Published var nomiLavorazioni: [String] = [
-        "MESSENGER BAGPACK",
+    // Ordine e nomi ufficiali della bolletta aziendale.
+    // Devono rimanere identici all'Excel per rendere immediato il confronto.
+    static let articoliAzienda: [String] = [
+        "MESSENGER",
+        "BAGPACK",
         "TODAY",
         "ACTIVITY",
         "ZAINI MARIN",
         "CLASSY",
         "ZAINO PRO",
-        "CASE MARINA",
+        "case marina",
         "MONEYFUL",
         "BORSA IN STOFFA",
         "PORTAPC"
     ]
+
+    @Published var nomiLavorazioni: [String] = Archivio.articoliAzienda
 
     private let bolletteKey = "contabilita_bollette"
     private let nomiKey = "contabilita_nomi_lavorazioni"
@@ -56,11 +61,11 @@ final class Archivio: ObservableObject {
            let value = try? JSONDecoder().decode([Bolletta].self, from: data) {
             bollette = value
         }
-        if let data = UserDefaults.standard.data(forKey: nomiKey),
-           let value = try? JSONDecoder().decode([String].self, from: data),
-           !value.isEmpty {
-            nomiLavorazioni = value
-        }
+        // La maschera segue sempre l'ordine dell'Excel aziendale.
+        // Non recuperiamo il vecchio elenco personalizzato perché potrebbe
+        // avere ordine o nomi diversi da quelli usati nel file dell'azienda.
+        nomiLavorazioni = Archivio.articoliAzienda
+        salvaDati()
     }
 
     func salvaDati() {
@@ -339,39 +344,15 @@ struct GruppoLavorazione: Identifiable {
 }
 
 func gruppiBollettaDaNomi() -> [GruppoLavorazione] {
-    [
-        GruppoLavorazione(nome: "classy", voci: [
-            VoceLavorazione(nome: "manici corti"),
-            VoceLavorazione(nome: "manici corto e tracolla")
-        ]),
-        GruppoLavorazione(nome: "bagpack", voci: [
-            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M"), VoceLavorazione(nome: "S")
-        ]),
-        GruppoLavorazione(nome: "training", voci: [
-            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M")
-        ]),
-        GruppoLavorazione(nome: "messenger", voci: [
-            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M")
-        ]),
-        GruppoLavorazione(nome: "today", voci: [
-            VoceLavorazione(nome: "M"), VoceLavorazione(nome: "S")
-        ]),
-        GruppoLavorazione(nome: "bagpack PRO", voci: [
-            VoceLavorazione(nome: "")
-        ]),
-        GruppoLavorazione(nome: "activity", voci: [
-            VoceLavorazione(nome: "")
-        ]),
-        GruppoLavorazione(nome: "moneyful", voci: [
-            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M")
-        ]),
-        GruppoLavorazione(nome: "case", voci: [
-            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M"), VoceLavorazione(nome: "S")
-        ]),
-        GruppoLavorazione(nome: "essential", voci: [
-            VoceLavorazione(nome: "")
-        ])
-    ]
+    // Una riga = un articolo dell'Excel, nello stesso identico ordine e con
+    // lo stesso identico testo. Questo vale sia per NUOVA BOLLETTA sia per
+    // MODIFICA BOLLETTA.
+    Archivio.articoliAzienda.map { nome in
+        GruppoLavorazione(
+            nome: nome,
+            voci: [VoceLavorazione(nome: "")]
+        )
+    }
 }
 
 struct NuovaBollettaView: View {
@@ -383,8 +364,6 @@ struct NuovaBollettaView: View {
     @State private var dataConfermata = false
     @State private var gruppi: [GruppoLavorazione] = []
     @FocusState private var rigaAttiva: Int?
-    @State private var nuovoArticolo = ""
-    @State private var mostraNuovoArticolo = false
     @State private var mostraConfermaCancella = false
 
     init(archivio: Archivio, bollettaDaModificare: Bolletta? = nil) {
@@ -518,32 +497,15 @@ struct NuovaBollettaView: View {
                             gruppoView(g, proxy: proxy)
                         }
 
-                        if bollettaDaModificare == nil {
-                            Button {
-                                mostraNuovoArticolo = true
-                            } label: {
-                                Text("+ AGGIUNGI ARTICOLO")
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity).padding()
-                            }
-                            .buttonStyle(.bordered)
-                        }
+                        // Elenco fisso: deve restare uguale all'ordine dell'Excel aziendale.
+                        Text("Ordine articoli uguale al file aziendale")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 4)
                     }
                     .padding(12)
                 }
             }
-        }
-        .alert("Nuovo articolo", isPresented: $mostraNuovoArticolo) {
-            TextField("Nome articolo", text: $nuovoArticolo)
-            Button("Aggiungi") {
-                let n = nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !n.isEmpty {
-                    archivio.aggiungiLavorazione(n)
-                    gruppi.append(GruppoLavorazione(nome: n, voci: [VoceLavorazione(nome: "")]))
-                    nuovoArticolo = ""
-                }
-            }
-            Button("Annulla", role: .cancel) { nuovoArticolo = "" }
         }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
