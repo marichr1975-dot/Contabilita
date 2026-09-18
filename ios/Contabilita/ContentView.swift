@@ -138,7 +138,7 @@ struct ContentView: View {
                     mostraDatiAnalizzati = true
                 }
 
-                homeButton(title: "ARCHIVIO CONTEGGI", icon: "archivebox.fill", tint: .indigo) {
+                homeButton(title: "ARCHIVIO ANALISI", icon: "archivebox.fill", tint: .indigo) {
                     mostraArchivioAnalisi = true
                 }
 
