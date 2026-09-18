@@ -65,7 +65,7 @@ final class ShareViewController: UIViewController {
                     return
                 }
 
-                guard let nome = self.nomeDaProvider(provider), !nome.isEmpty else {
+                guard let nome = self.nomeDaProvider(provider), !nome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     DispatchQueue.main.async { self.termina() }
                     return
                 }

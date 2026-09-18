@@ -126,37 +126,52 @@ struct ContentView: View {
                     .font(.largeTitle)
                     .fontWeight(.semibold)
 
-                // Home: quattro menu principali in griglia 2x2.
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 14),
-                    GridItem(.flexible(), spacing: 14)
-                ], spacing: 14) {
-                    homeButton(title: "NUOVA BOLLETTA", icon: "plus.circle.fill", tint: .green) {
-                        nuovaBolletta = true
-                    }
-
-                    homeButton(title: "MODIFICA BOLLETTA", icon: "pencil.circle.fill", tint: .blue) {
-                        modificaBolletta = true
-                    }
-
-                    homeButton(title: "ANALISI", icon: "chart.bar.fill", tint: .purple) {
-                        mostraDatiAnalizzati = true
-                    }
-
-                    homeButton(
-                        title: pdfImportati > 0 ? "FILE AZIENDA  •  \(pdfImportati)" : "IMPORTA FILE AZIENDA",
-                        icon: "doc.on.doc.fill",
-                        tint: .teal
-                    ) {
-                        mostraPDF = true
-                    }
+                homeButton(title: "NUOVA BOLLETTA", icon: "plus.circle.fill", tint: .green) {
+                    nuovaBolletta = true
                 }
 
-                // Quinto menu: centrato sotto i quattro, identico per dimensioni e stile.
-                homeButton(title: "ARCHIVIO ANALISI", icon: "archivebox.fill", tint: .indigo) {
+                homeButton(title: "MODIFICA BOLLETTA", icon: "pencil.circle.fill", tint: .blue) {
+                    modificaBolletta = true
+                }
+
+                homeButton(title: "ANALISI", icon: "chart.bar.fill", tint: .purple) {
+                    mostraDatiAnalizzati = true
+                }
+
+                homeButton(
+                    title: pdfImportati > 0 ? "FILE AZIENDA  •  \(pdfImportati)" : "IMPORTA FILE AZIENDA",
+                    icon: "doc.on.doc.fill",
+                    tint: .teal
+                ) {
+                    mostraPDF = true
+                }
+
+                // Quinto menu: volutamente separato e centrato sotto gli altri quattro.
+                Button {
                     mostraArchivioAnalisi = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "archivebox.fill")
+                            .font(.system(size: 27))
+                            .foregroundColor(.indigo)
+                        Text("ARCHIVIO ANALISI")
+                            .font(.title3.weight(.semibold))
+                            .foregroundColor(.primary)
+                            .minimumScaleFactor(0.75)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.right")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(width: 360, minHeight: 58)
+                    .padding(.horizontal, 18)
+                    .background(Color.indigo.opacity(0.12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.indigo.opacity(0.28), lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
-                .frame(maxWidth: 360)
                 .frame(maxWidth: .infinity)
 
                 Spacer()
@@ -196,11 +211,8 @@ struct ContentView: View {
                     .font(.title3)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.75)
 
-                Spacer(minLength: 0)
+                Spacer()
 
                 Image(systemName: "chevron.right")
                     .font(.headline)
@@ -209,7 +221,6 @@ struct ContentView: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
-            .frame(minHeight: 76)
             .background(tint.opacity(0.10))
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
@@ -280,6 +291,12 @@ struct PDFImportatiView: View {
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
+                            ShareLink(item: file) {
+                                Label("CONDIVIDI", systemImage: "square.and.arrow.up")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.blue)
+
                             Button("CANCELLA") {
                                 store.elimina(file: file)
                             }
