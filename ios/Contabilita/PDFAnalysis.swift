@@ -63,6 +63,7 @@ struct PDFAnalysisResult: Identifiable, Codable {
 
 final class PDFAnalysisStore: ObservableObject {
     @Published private(set) var analyses: [PDFAnalysisResult] = []
+    @Published var richiediReset = false
     private let key = "contabilita_pdf_analisi"
 
     init() { carica() }
@@ -72,6 +73,19 @@ final class PDFAnalysisStore: ObservableObject {
            let value = try? JSONDecoder().decode([PDFAnalysisResult].self, from: data) {
             analyses = value
         }
+    }
+
+    /// Rende esplicito il salvataggio dell'archivio, mantenendo tutte le analisi già presenti.
+    func salvaTutte() {
+        if let data = try? JSONEncoder().encode(analyses) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    func reset() {
+        analyses.removeAll()
+        UserDefaults.standard.removeObject(forKey: key)
+        richiediReset = false
     }
 
     func analizza(file: URL, bollette: [Bolletta]) {
@@ -103,9 +117,7 @@ final class PDFAnalysisStore: ObservableObject {
     private func salva(_ result: PDFAnalysisResult) {
         analyses.removeAll { $0.fileName == result.fileName }
         analyses.insert(result, at: 0)
-        if let data = try? JSONEncoder().encode(analyses) {
-            UserDefaults.standard.set(data, forKey: key)
-        }
+        salvaTutte()
     }
 
     func giorniAzienda() -> [PDFAnalysisDay] {

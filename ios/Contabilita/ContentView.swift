@@ -109,6 +109,7 @@ struct ContentView: View {
     @State private var nuovaBolletta = false
     @State private var modificaBolletta = false
     @State private var mostraDatiAnalizzati = false
+    @State private var mostraArchivioAnalisi = false
     @State private var mostraPDF = false
     @State private var pdfImportati = 0
 
@@ -133,8 +134,12 @@ struct ContentView: View {
                     modificaBolletta = true
                 }
 
-                homeButton(title: "DATI ANALIZZATI", icon: "chart.bar.fill", tint: .purple) {
+                homeButton(title: "ANALISI", icon: "chart.bar.fill", tint: .purple) {
                     mostraDatiAnalizzati = true
+                }
+
+                homeButton(title: "ARCHIVIO ANALISI", icon: "archivebox.fill", tint: .indigo) {
+                    mostraArchivioAnalisi = true
                 }
 
                 homeButton(
@@ -157,6 +162,9 @@ struct ContentView: View {
             }
             .sheet(isPresented: $mostraDatiAnalizzati) {
                 DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore)
+            }
+            .sheet(isPresented: $mostraArchivioAnalisi) {
+                ArchivioAnalisiView(analysisStore: analysisStore)
             }
             .sheet(isPresented: $mostraPDF) {
                 PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore)
@@ -928,9 +936,152 @@ struct DatiAnalizzatiView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button("SALVA ANALISI") {
+                        analysisStore.salvaTutte()
+                    }
+                    Button("RESET ANALISI") {
+                        analysisStore.richiediReset = true
+                    }
+                }
+            }
+            .confirmationDialog(
+                "RESET ANALISI",
+                isPresented: $analysisStore.richiediReset,
+                titleVisibility: .visible
+            ) {
+                Button("Resetta analisi", role: .destructive) {
+                    analysisStore.reset()
+                }
+                Button("Annulla", role: .cancel) { }
+            } message: {
+                Text("Le analisi archiviate verranno cancellate. Le bollette inserite nell'app non verranno toccate.")
             }
             .sheet(item: $bollettaDaAprire) { bolletta in
                 NuovaBollettaView(archivio: archivio, bollettaDaModificare: bolletta)
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
+
+struct ArchivioAnalisiView: View {
+    @ObservedObject var analysisStore: PDFAnalysisStore
+    @Environment(\.presentationMode) private var presentationMode
+
+    private var gruppiAnno: [(anno: Int, analisi: [PDFAnalysisResult])] {
+        let cal = Calendar.current
+        let grouped = Dictionary(grouping: analysisStore.analyses) {
+            cal.component(.year, from: $0.date ?? $0.days.first?.date ?? Date())
+        }
+        return grouped.keys.sorted(by: >).map { anno in
+            (anno, grouped[anno]!.sorted {
+                ($0.date ?? $0.days.first?.date ?? .distantPast) >
+                ($1.date ?? $1.days.first?.date ?? .distantPast)
+            })
+        }
+    }
+
+    private func periodo(_ a: PDFAnalysisResult) -> String {
+        let dates = a.days.map(\.date)
+        let start = dates.min() ?? a.date
+        let end = dates.max() ?? a.date
+        guard let start else { return "Periodo non disponibile" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "it_IT")
+        f.dateFormat = "dd MMM yyyy"
+        if let end, !Calendar.current.isDate(start, inSameDayAs: end) {
+            return "\(f.string(from: start)) – \(f.string(from: end))"
+        }
+        return f.string(from: start)
+    }
+
+    private func totale(_ a: PDFAnalysisResult) -> Double {
+        a.days.flatMap(\.rows).compactMap(\.total).reduce(0, +)
+    }
+
+    private func totaleAnno(_ analisi: [PDFAnalysisResult]) -> Double {
+        analisi.reduce(0) { $0 + totale($1) }
+    }
+
+    private func euro(_ value: Double) -> String {
+        value.formatted(.currency(code: "EUR"))
+    }
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if gruppiAnno.isEmpty {
+                    VStack(spacing: 14) {
+                        Image(systemName: "archivebox")
+                            .font(.system(size: 48))
+                            .foregroundColor(.indigo)
+                        Text("ARCHIVIO ANALISI")
+                            .font(.title2.weight(.semibold))
+                        Text("Le analisi salvate compariranno qui, raggruppate per anno.")
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(28)
+                } else {
+                    List {
+                        ForEach(gruppiAnno, id: \.anno) { gruppo in
+                            Section {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("TOTALE ANNUO")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundColor(.secondary)
+                                    Text(euro(totaleAnno(gruppo.analisi)))
+                                        .font(.system(size: 28, weight: .bold))
+                                        .foregroundColor(.green)
+                                }
+                                .padding(.vertical, 6)
+
+                                ForEach(gruppo.analisi) { analisi in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            Image(systemName: "doc.text.fill")
+                                                .foregroundColor(.indigo)
+                                            Text(analisi.fileName)
+                                                .font(.headline)
+                                                .lineLimit(2)
+                                            Spacer()
+                                        }
+                                        Text(periodo(analisi))
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                        HStack {
+                                            Text("Totale maturato")
+                                                .foregroundColor(.secondary)
+                                            Spacer()
+                                            Text(euro(totale(analisi)))
+                                                .font(.headline.weight(.semibold))
+                                        }
+                                    }
+                                    .padding(.vertical, 7)
+                                }
+                            } header: {
+                                HStack {
+                                    Text(String(gruppo.anno))
+                                        .font(.title2.weight(.bold))
+                                    Spacer()
+                                    Text(euro(totaleAnno(gruppo.analisi)))
+                                        .font(.headline.weight(.bold))
+                                        .foregroundColor(.green)
+                                }
+                            }
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                }
+            }
+            .navigationTitle("Archivio analisi")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
+                }
             }
         }
         .navigationViewStyle(.stack)
