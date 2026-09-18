@@ -26,8 +26,14 @@ final class PDFTransferStore: ObservableObject {
             return
         }
 
-        let name = (pasteboard.value(forPasteboardType: Self.namePasteboardType) as? String)
-            ?? "file_azienda.xlsx"
+        // Il nome deve arrivare dalla Share Extension: è il nome reale del file
+        // ricevuto (es. mario.pdf o mario.xlsx). Non usare mai un nome fisso.
+        guard let nameValue = pasteboard.value(forPasteboardType: Self.namePasteboardType) as? String,
+              !nameValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            ricarica()
+            return
+        }
+        let name = nameValue
 
         // Un nuovo import sostituisce quello precedente.
         eliminaTuttiIFileLocali()
@@ -84,9 +90,12 @@ final class PDFTransferStore: ObservableObject {
 
         let base = (nome as NSString).deletingPathExtension
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let safeBase = base.isEmpty ? "file_azienda" : base
+        guard !base.isEmpty else {
+            print("Nome file azienda non valido: \(nome)")
+            return
+        }
 
-        let url = folder.appendingPathComponent("\(safeBase).\(ext)")
+        let url = folder.appendingPathComponent("\(base).\(ext)")
 
         do {
             try data.write(to: url, options: .atomic)

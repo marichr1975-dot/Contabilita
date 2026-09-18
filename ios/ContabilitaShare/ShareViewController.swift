@@ -65,7 +65,10 @@ final class ShareViewController: UIViewController {
                     return
                 }
 
-                let nome = self.nomeDaProvider(provider) ?? "file_azienda"
+                guard let nome = self.nomeDaProvider(provider), !nome.isEmpty else {
+                    DispatchQueue.main.async { self.termina() }
+                    return
+                }
                 let ok = self.salvaSuPasteboard(data: data, nome: nome)
 
                 DispatchQueue.main.async {

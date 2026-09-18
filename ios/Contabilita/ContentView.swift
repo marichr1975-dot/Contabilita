@@ -126,29 +126,38 @@ struct ContentView: View {
                     .font(.largeTitle)
                     .fontWeight(.semibold)
 
-                homeButton(title: "NUOVA BOLLETTA", icon: "plus.circle.fill", tint: .green) {
-                    nuovaBolletta = true
+                // Home: quattro menu principali in griglia 2x2.
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: 14),
+                    GridItem(.flexible(), spacing: 14)
+                ], spacing: 14) {
+                    homeButton(title: "NUOVA BOLLETTA", icon: "plus.circle.fill", tint: .green) {
+                        nuovaBolletta = true
+                    }
+
+                    homeButton(title: "MODIFICA BOLLETTA", icon: "pencil.circle.fill", tint: .blue) {
+                        modificaBolletta = true
+                    }
+
+                    homeButton(title: "ANALISI", icon: "chart.bar.fill", tint: .purple) {
+                        mostraDatiAnalizzati = true
+                    }
+
+                    homeButton(
+                        title: pdfImportati > 0 ? "FILE AZIENDA  •  \(pdfImportati)" : "IMPORTA FILE AZIENDA",
+                        icon: "doc.on.doc.fill",
+                        tint: .teal
+                    ) {
+                        mostraPDF = true
+                    }
                 }
 
-                homeButton(title: "MODIFICA BOLLETTA", icon: "pencil.circle.fill", tint: .blue) {
-                    modificaBolletta = true
-                }
-
-                homeButton(title: "ANALISI", icon: "chart.bar.fill", tint: .purple) {
-                    mostraDatiAnalizzati = true
-                }
-
+                // Quinto menu: centrato sotto i quattro, identico per dimensioni e stile.
                 homeButton(title: "ARCHIVIO ANALISI", icon: "archivebox.fill", tint: .indigo) {
                     mostraArchivioAnalisi = true
                 }
-
-                homeButton(
-                    title: pdfImportati > 0 ? "FILE AZIENDA  •  \(pdfImportati)" : "IMPORTA FILE AZIENDA",
-                    icon: "doc.on.doc.fill",
-                    tint: .teal
-                ) {
-                    mostraPDF = true
-                }
+                .frame(maxWidth: 360)
+                .frame(maxWidth: .infinity)
 
                 Spacer()
             }
@@ -187,8 +196,11 @@ struct ContentView: View {
                     .font(.title3)
                     .fontWeight(.semibold)
                     .foregroundColor(.primary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
 
-                Spacer()
+                Spacer(minLength: 0)
 
                 Image(systemName: "chevron.right")
                     .font(.headline)
@@ -197,6 +209,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
+            .frame(minHeight: 76)
             .background(tint.opacity(0.10))
             .overlay(
                 RoundedRectangle(cornerRadius: 14)
