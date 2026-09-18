@@ -163,7 +163,7 @@ struct ContentView: View {
                             .font(.headline)
                             .foregroundColor(.secondary)
                     }
-                    .frame(width: 360, minHeight: 58)
+                    .frame(width: 360, height: 58)
                     .padding(.horizontal, 18)
                     .background(Color.indigo.opacity(0.12))
                     .overlay(
