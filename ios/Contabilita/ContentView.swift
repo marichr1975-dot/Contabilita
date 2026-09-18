@@ -138,7 +138,7 @@ struct ContentView: View {
                     mostraDatiAnalizzati = true
                 }
 
-                homeButton(title: "ARCHIVIO ANALISI", icon: "archivebox.fill", tint: .indigo) {
+                homeButton(title: "ARCHIVIO CONTEGGI", icon: "archivebox.fill", tint: .indigo) {
                     mostraArchivioAnalisi = true
                 }
 
@@ -495,35 +495,16 @@ struct NuovaBollettaView: View {
     }
 
     private var scegliData: some View {
-        VStack(spacing: 20) {
-            Text("SCEGLI LA DATA")
-                .font(.title2)
-
-            HStack(spacing: 12) {
-                Image(systemName: "calendar")
-                    .font(.title2)
-                DatePicker("Data", selection: $data, displayedComponents: .date)
-                    .datePickerStyle(.compact)
-                    .environment(\.locale, Locale(identifier: "it_IT"))
-                    .labelsHidden()
-                Spacer()
-            }
-            .padding()
-            .background(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.35)))
-
-            Text(data.formatted(.dateTime.day().month(.wide).year()))
-                .font(.title3)
-                .environment(\.locale, Locale(identifier: "it_IT"))
-
+        VStack(spacing: 16) {
+            DataMeseSelector(data: $data)
             Button {
                 dataConfermata = true
                 rigaAttiva = 0
             } label: {
-                Text("OK").font(.title2)
+                Text("CONFERMA DATA").font(.title2.weight(.semibold))
                     .frame(maxWidth: .infinity).padding()
             }
             .buttonStyle(.borderedProminent)
-
             Spacer()
         }
         .padding(22)
@@ -676,6 +657,86 @@ struct NuovaBollettaView: View {
     }
 }
 
+struct DataMeseSelector: View {
+    @Binding var data: Date
+    private let cal = Calendar(identifier: .gregorian)
+    private let mesi = ["GENNAIO", "FEBBRAIO", "MARZO", "APRILE", "MAGGIO", "GIUGNO", "LUGLIO", "AGOSTO", "SETTEMBRE", "OTTOBRE", "NOVEMBRE", "DICEMBRE"]
+
+    private var mese: Int { cal.component(.month, from: data) }
+    private var anno: Int { cal.component(.year, from: data) }
+    private var primoGiorno: Date { cal.date(from: DateComponents(year: anno, month: mese, day: 1))! }
+    private var giorniNelMese: Int { cal.range(of: .day, in: .month, for: primoGiorno)!.count }
+    private var offset: Int { (cal.component(.weekday, from: primoGiorno) + 5) % 7 }
+
+    private func cambiaMese(_ delta: Int) {
+        guard let nuovoMese = cal.date(byAdding: .month, value: delta, to: primoGiorno) else { return }
+        let y = cal.component(.year, from: nuovoMese)
+        let m = cal.component(.month, from: nuovoMese)
+        let giorno = min(cal.component(.day, from: data), cal.range(of: .day, in: .month, for: nuovoMese)!.count)
+        data = cal.date(from: DateComponents(year: y, month: m, day: giorno))!
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Text("SCEGLI LA DATA")
+                .font(.title2.weight(.semibold))
+
+            HStack {
+                Button { cambiaMese(-1) } label: {
+                    Image(systemName: "chevron.left.circle.fill").font(.system(size: 34))
+                }
+                .accessibilityLabel("Mese precedente")
+                Spacer()
+                VStack(spacing: 2) {
+                    Text(mesi[mese - 1]).font(.title3.weight(.bold))
+                    Text(String(anno)).font(.headline).foregroundColor(.secondary)
+                }
+                Spacer()
+                Button { cambiaMese(1) } label: {
+                    Image(systemName: "chevron.right.circle.fill").font(.system(size: 34))
+                }
+                .accessibilityLabel("Mese successivo")
+            }
+            .padding(.horizontal, 8)
+
+            HStack(spacing: 0) {
+                ForEach(["L", "M", "M", "G", "V", "S", "D"], id: \.self) { g in
+                    Text(g).font(.caption.weight(.bold)).frame(maxWidth: .infinity)
+                }
+            }
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
+                ForEach(0..<(offset + giorniNelMese), id: \.self) { indice in
+                    if indice < offset {
+                        Color.clear.frame(height: 40)
+                    } else {
+                        let giorno = indice - offset + 1
+                        Button {
+                            data = cal.date(from: DateComponents(year: anno, month: mese, day: giorno))!
+                        } label: {
+                            Text(String(giorno))
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, minHeight: 40)
+                                .background(cal.component(.day, from: data) == giorno ? Color.accentColor : Color.gray.opacity(0.12))
+                                .foregroundColor(cal.component(.day, from: data) == giorno ? .white : .primary)
+                                .clipShape(RoundedRectangle(cornerRadius: 9))
+                        }
+                    }
+                }
+            }
+
+            Text(data.formatted(.dateTime.day().month(.wide).year()))
+                .font(.title3.weight(.semibold))
+                .environment(\.locale, Locale(identifier: "it_IT"))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.gray.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .environment(\.locale, Locale(identifier: "it_IT"))
+    }
+}
+
 struct SelezionaDataModificaView: View {
     @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
@@ -687,22 +748,7 @@ struct SelezionaDataModificaView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                Text("SCEGLI LA DATA")
-                    .font(.title2)
-
-                HStack(spacing: 12) {
-                    Image(systemName: "calendar").font(.title2)
-                    DatePicker("Data", selection: $data, displayedComponents: .date)
-                        .datePickerStyle(.compact)
-                        .environment(\.locale, Locale(identifier: "it_IT"))
-                        .labelsHidden()
-                    Spacer()
-                }
-                .padding()
-                .background(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.35)))
-                Text(data.formatted(.dateTime.day().month(.wide).year()))
-                    .font(.title3)
-                    .environment(\.locale, Locale(identifier: "it_IT"))
+                DataMeseSelector(data: $data)
 
                 Button("OK") {
                     cercaBollette()
@@ -896,8 +942,32 @@ struct DatiAnalizzatiView: View {
 
                     Divider()
 
-                    List {
-                        ForEach(tutteLeDate, id: \.self) { data in
+                    VStack(spacing: 10) {
+                        HStack(spacing: 12) {
+                            Button {
+                                analysisStore.salvaTutte()
+                            } label: {
+                                Label("SALVA ANALISI", systemImage: "square.and.arrow.down.fill")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            Button {
+                                analysisStore.richiediReset = true
+                            } label: {
+                                Label("RESET ANALISI", systemImage: "trash.fill")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding(.horizontal, 12)
+
+                        List {
+                            ForEach(tutteLeDate, id: \.self) { data in
                             let nostra = bollettaNostra(per: data)
                             let azienda = giornoAzienda(per: data)
                             let stato = confronto(nostra, azienda)
@@ -926,8 +996,9 @@ struct DatiAnalizzatiView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        }
+                        .listStyle(.plain)
                     }
-                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Dati analizzati")
@@ -936,26 +1007,14 @@ struct DatiAnalizzatiView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button("SALVA ANALISI") {
-                        analysisStore.salvaTutte()
-                    }
-                    Button("RESET ANALISI") {
-                        analysisStore.richiediReset = true
-                    }
-                }
             }
-            .confirmationDialog(
-                "RESET ANALISI",
-                isPresented: $analysisStore.richiediReset,
-                titleVisibility: .visible
-            ) {
-                Button("Resetta analisi", role: .destructive) {
+            .alert("RESET ANALISI", isPresented: $analysisStore.richiediReset) {
+                Button("ANNULLA", role: .cancel) { }
+                Button("CONFERMA RESET", role: .destructive) {
                     analysisStore.reset()
                 }
-                Button("Annulla", role: .cancel) { }
             } message: {
-                Text("Le analisi archiviate verranno cancellate. Le bollette inserite nell'app non verranno toccate.")
+                Text("Vuoi cancellare tutte le analisi archiviate? Le bollette inserite nell'app NON verranno cancellate.")
             }
             .sheet(item: $bollettaDaAprire) { bolletta in
                 NuovaBollettaView(archivio: archivio, bollettaDaModificare: bolletta)
