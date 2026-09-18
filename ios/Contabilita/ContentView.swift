@@ -246,6 +246,15 @@ struct ContentView: View {
     }
 }
 
+private func condividiFile(_ file: URL) {
+    let controller = UIActivityViewController(activityItems: [file], applicationActivities: nil)
+    guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+          let root = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController else { return }
+    var presenter = root
+    while let presented = presenter.presentedViewController { presenter = presented }
+    presenter.present(controller, animated: true)
+}
+
 struct PDFImportatiView: View {
     @ObservedObject var store: PDFTransferStore
     @ObservedObject var analysisStore: PDFAnalysisStore
@@ -291,7 +300,9 @@ struct PDFImportatiView: View {
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
-                            ShareLink(item: file) {
+                            Button {
+                                condividiFile(file)
+                            } label: {
                                 Label("CONDIVIDI", systemImage: "square.and.arrow.up")
                             }
                             .buttonStyle(.borderedProminent)
