@@ -32,14 +32,13 @@ struct Bolletta: Identifiable, Codable {
 final class Archivio: ObservableObject {
     @Published var bollette: [Bolletta] = []
     @Published var nomiLavorazioni: [String] = [
-        "MESSENGER",
-        "BAGPACK",
+        "MESSENGER BAGPACK",
         "TODAY",
         "ACTIVITY",
         "ZAINI MARIN",
         "CLASSY",
         "ZAINO PRO",
-        "case marina",
+        "CASE MARINA",
         "MONEYFUL",
         "BORSA IN STOFFA",
         "PORTAPC"
@@ -109,7 +108,6 @@ struct ContentView: View {
     @State private var nuovaBolletta = false
     @State private var modificaBolletta = false
     @State private var mostraDatiAnalizzati = false
-    @State private var mostraArchivioAnalisi = false
     @State private var mostraPDF = false
     @State private var pdfImportati = 0
 
@@ -134,45 +132,17 @@ struct ContentView: View {
                     modificaBolletta = true
                 }
 
-                homeButton(title: "ANALISI", icon: "chart.bar.fill", tint: .purple) {
+                homeButton(title: "DATI ANALIZZATI", icon: "chart.bar.fill", tint: .purple) {
                     mostraDatiAnalizzati = true
                 }
 
                 homeButton(
-                    title: pdfImportati > 0 ? "FILE AZIENDA  •  \(pdfImportati)" : "IMPORTA FILE AZIENDA",
-                    icon: "doc.on.doc.fill",
+                    title: pdfImportati > 0 ? "PDF AZIENDA  •  \(pdfImportati)" : "IMPORTA PDF AZIENDA",
+                    icon: "doc.fill",
                     tint: .teal
                 ) {
                     mostraPDF = true
                 }
-
-                // Quinto menu: volutamente separato e centrato sotto gli altri quattro.
-                Button {
-                    mostraArchivioAnalisi = true
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "archivebox.fill")
-                            .font(.system(size: 27))
-                            .foregroundColor(.indigo)
-                        Text("ARCHIVIO ANALISI")
-                            .font(.title3.weight(.semibold))
-                            .foregroundColor(.primary)
-                            .minimumScaleFactor(0.75)
-                            .lineLimit(1)
-                        Image(systemName: "chevron.right")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(width: 360, height: 58)
-                    .padding(.horizontal, 18)
-                    .background(Color.indigo.opacity(0.12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color.indigo.opacity(0.28), lineWidth: 1)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-                .frame(maxWidth: .infinity)
 
                 Spacer()
             }
@@ -187,11 +157,8 @@ struct ContentView: View {
             .sheet(isPresented: $mostraDatiAnalizzati) {
                 DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore)
             }
-            .sheet(isPresented: $mostraArchivioAnalisi) {
-                ArchivioAnalisiView(analysisStore: analysisStore)
-            }
             .sheet(isPresented: $mostraPDF) {
-                PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore)
+                PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore, archivio: archivio)
             }
             .onAppear { aggiornaPDF() }
             .onChange(of: scenePhase) { phase in
@@ -237,32 +204,22 @@ struct ContentView: View {
             pdfImportati = 0
             return
         }
-        let folder = container.appendingPathComponent("FileAzienda", isDirectory: true)
+        let folder = container.appendingPathComponent("PDFImportati", isDirectory: true)
         let files = (try? FileManager.default.contentsOfDirectory(
             at: folder,
             includingPropertiesForKeys: nil
         )) ?? []
-        pdfImportati = files.filter { ["pdf", "xlsx", "xls"].contains($0.pathExtension.lowercased()) }.count
+        pdfImportati = files.filter { $0.pathExtension.lowercased() == "pdf" }.count
     }
-}
-
-private func condividiFile(_ file: URL) {
-    let controller = UIActivityViewController(activityItems: [file], applicationActivities: nil)
-    guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-          let root = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController else { return }
-    var presenter = root
-    while let presented = presenter.presentedViewController { presenter = presented }
-    presenter.present(controller, animated: true)
 }
 
 struct PDFImportatiView: View {
     @ObservedObject var store: PDFTransferStore
     @ObservedObject var analysisStore: PDFAnalysisStore
+    @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
     @State private var pdfDaMostrare: URL?
     @State private var analisiInCorso: URL?
-    @State private var messaggioCaricamento = ""
-    @State private var mostraConfermaCaricamento = false
 
     var body: some View {
         NavigationView {
@@ -272,12 +229,12 @@ struct PDFImportatiView: View {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.system(size: 48))
                         .foregroundColor(.teal)
-                    Text("Nessun file azienda ricevuto").font(.title2)
+                    Text("Nessun PDF ricevuto").font(.title2)
                     Text("Da WhatsApp o File: Condividi → Contabilità")
                         .multilineTextAlignment(.center).foregroundColor(.secondary)
                     Spacer()
                 } else {
-                    Text("FILE AZIENDA RICEVUTI").font(.title2).fontWeight(.semibold).padding(.top, 8)
+                    Text("PDF RICEVUTI").font(.title2).fontWeight(.semibold).padding(.top, 8)
                     List(store.files, id: \.self) { file in
                         HStack(spacing: 10) {
                             Image(systemName: "doc.fill").foregroundColor(.teal)
@@ -285,34 +242,13 @@ struct PDFImportatiView: View {
                             Spacer()
                             Button("CARICA") {
                                 analisiInCorso = file
-                                analysisStore.analizza(file: file, bollette: [])
+                                analysisStore.analizza(file: file, bollette: archivio.bollette)
                                 analisiInCorso = nil
-                                messaggioCaricamento = "✓ FILE CARICATO E ANALIZZATO"
-                                mostraConfermaCaricamento = true
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(.green)
-                            if file.pathExtension.lowercased() == "pdf" {
-                                Button("MOSTRA PDF") { pdfDaMostrare = file }
-                                    .buttonStyle(.bordered)
-                            } else {
-                                Text("EXCEL")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            Button {
-                                condividiFile(file)
-                            } label: {
-                                Label("CONDIVIDI", systemImage: "square.and.arrow.up")
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.blue)
-
-                            Button("CANCELLA") {
-                                store.elimina(file: file)
-                            }
-                            .buttonStyle(.bordered)
-                            .foregroundColor(.red)
+                            Button("MOSTRA PDF") { pdfDaMostrare = file }
+                                .buttonStyle(.bordered)
                         }
                         .padding(.vertical, 8)
                     }
@@ -320,7 +256,7 @@ struct PDFImportatiView: View {
                 }
             }
             .padding(18)
-            .navigationTitle("File azienda")
+            .navigationTitle("PDF azienda")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -329,9 +265,6 @@ struct PDFImportatiView: View {
             }
             .onAppear { store.ricarica() }
             .sheet(item: $pdfDaMostrare) { file in PDFViewer(url: file) }
-            .alert(messaggioCaricamento, isPresented: $mostraConfermaCaricamento) {
-                Button("OK", role: .cancel) { }
-            }
         }
         .navigationViewStyle(.stack)
     }
@@ -389,13 +322,39 @@ struct GruppoLavorazione: Identifiable {
 }
 
 func gruppiBollettaDaNomi() -> [GruppoLavorazione] {
-    // Ordine e nomi presi direttamente dal file Excel aziendale.
-    let articoli = [
-        "MESSENGER", "BAGPACK", "TODAY", "ACTIVITY", "ZAINI MARIN",
-        "CLASSY", "ZAINO PRO", "case marina", "MONEYFUL",
-        "BORSA IN STOFFA", "PORTAPC"
+    [
+        GruppoLavorazione(nome: "classy", voci: [
+            VoceLavorazione(nome: "manici corti"),
+            VoceLavorazione(nome: "manici corto e tracolla")
+        ]),
+        GruppoLavorazione(nome: "bagpack", voci: [
+            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M"), VoceLavorazione(nome: "S")
+        ]),
+        GruppoLavorazione(nome: "training", voci: [
+            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M")
+        ]),
+        GruppoLavorazione(nome: "messenger", voci: [
+            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M")
+        ]),
+        GruppoLavorazione(nome: "today", voci: [
+            VoceLavorazione(nome: "M"), VoceLavorazione(nome: "S")
+        ]),
+        GruppoLavorazione(nome: "bagpack PRO", voci: [
+            VoceLavorazione(nome: "")
+        ]),
+        GruppoLavorazione(nome: "activity", voci: [
+            VoceLavorazione(nome: "")
+        ]),
+        GruppoLavorazione(nome: "moneyful", voci: [
+            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M")
+        ]),
+        GruppoLavorazione(nome: "case", voci: [
+            VoceLavorazione(nome: "L"), VoceLavorazione(nome: "M"), VoceLavorazione(nome: "S")
+        ]),
+        GruppoLavorazione(nome: "essential", voci: [
+            VoceLavorazione(nome: "")
+        ])
     ]
-    return articoli.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) }
 }
 
 struct NuovaBollettaView: View {
@@ -407,59 +366,19 @@ struct NuovaBollettaView: View {
     @State private var dataConfermata = false
     @State private var gruppi: [GruppoLavorazione] = []
     @FocusState private var rigaAttiva: Int?
-    @State private var mostraConfermaCancella = false
     @State private var nuovoArticolo = ""
-    @State private var mostraAggiungiArticolo = false
+    @State private var mostraNuovoArticolo = false
+    @State private var mostraConfermaCancella = false
 
     init(archivio: Archivio, bollettaDaModificare: Bolletta? = nil) {
         self.archivio = archivio
         self.bollettaDaModificare = bollettaDaModificare
         _data = State(initialValue: bollettaDaModificare?.data ?? Date())
         _dataConfermata = State(initialValue: bollettaDaModificare != nil)
-        if let b = bollettaDaModificare {
-            var gruppiIniziali = gruppiBollettaDaNomi()
-            let lavoriSalvati = b.lavorazioni
-            let normalizzaTesto: (String) -> String = { testo in
-                testo.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-                    .replacingOccurrences(of: " ", with: "")
-                    .replacingOccurrences(of: "-", with: "")
-            }
-
-            for g in gruppiIniziali.indices {
-                for v in gruppiIniziali[g].voci.indices {
-                    let nomeCompleto = gruppiIniziali[g].voci[v].nome.isEmpty
-                        ? gruppiIniziali[g].nome
-                        : "\(gruppiIniziali[g].nome) \(gruppiIniziali[g].voci[v].nome)"
-                    if let lavoro = lavoriSalvati.first(where: { normalizzaTesto($0.nome) == normalizzaTesto(nomeCompleto) }) {
-                        gruppiIniziali[g].voci[v].quantita = lavoro.quantita
-                    }
-                }
-            }
-
-            // Mantiene eventuali articoli personalizzati presenti nella bolletta.
-            let nomiStandard = Set(gruppiIniziali.flatMap { g in
-                g.voci.map { v in
-                    v.nome.isEmpty ? g.nome : "\(g.nome) \(v.nome)"
-                }
-            }.map(normalizzaTesto))
-
-            for lavoro in lavoriSalvati where !nomiStandard.contains(normalizzaTesto(lavoro.nome)) {
-                gruppiIniziali.append(
-                    GruppoLavorazione(
-                        nome: lavoro.nome,
-                        voci: [VoceLavorazione(nome: "", quantita: lavoro.quantita)]
-                    )
-                )
-            }
-
-            _gruppi = State(initialValue: gruppiIniziali)
-        } else {
-            var iniziali = gruppiBollettaDaNomi()
-            let standard = Set(iniziali.map { $0.nome.lowercased() })
-            let personalizzati = archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }
-            iniziali.append(contentsOf: personalizzati.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
-            _gruppi = State(initialValue: iniziali)
-        }
+        let gruppiIniziali: [GruppoLavorazione] = bollettaDaModificare.map { b in
+            b.lavorazioni.map { GruppoLavorazione(nome: $0.nome, voci: [VoceLavorazione(nome: "", quantita: $0.quantita)]) }
+        } ?? []
+        _gruppi = State(initialValue: gruppiIniziali)
     }
 
     var body: some View {
@@ -504,48 +423,31 @@ struct NuovaBollettaView: View {
         } message: {
             Text("Vuoi cancellare definitivamente questa bolletta?")
         }
-        .sheet(isPresented: $mostraAggiungiArticolo) {
-            NavigationView {
-                Form {
-                    Section("NUOVO ARTICOLO") {
-                        TextField("Nome articolo", text: $nuovoArticolo)
-                            .textInputAutocapitalization(.sentences)
-                    }
-                    Section {
-                        Button("AGGIUNGI") {
-                            aggiungiArticolo()
-                        }
-                        .disabled(nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
-                .navigationTitle("Aggiungi articolo")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button("Annulla") { mostraAggiungiArticolo = false }
-                    }
-                }
-            }
-        }
         .onAppear {
             if gruppi.isEmpty && bollettaDaModificare == nil {
                 gruppi = gruppiBollettaDaNomi()
-                let standard = Set(gruppi.map { $0.nome.lowercased() })
-                gruppi.append(contentsOf: archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
             }
         }
     }
 
     private var scegliData: some View {
-        VStack(spacing: 16) {
-            DataMeseSelector(data: $data)
+        VStack(spacing: 20) {
+            Text("SCEGLI LA DATA")
+                .font(.title2)
+
+            DatePicker("Data", selection: $data, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+
             Button {
                 dataConfermata = true
                 rigaAttiva = 0
             } label: {
-                Text("CONFERMA DATA").font(.title2.weight(.semibold))
+                Text("OK").font(.title2)
                     .frame(maxWidth: .infinity).padding()
             }
             .buttonStyle(.borderedProminent)
+
             Spacer()
         }
         .padding(22)
@@ -563,22 +465,32 @@ struct NuovaBollettaView: View {
                             gruppoView(g, proxy: proxy)
                         }
 
-                        Button { mostraAggiungiArticolo = true } label: {
-                            HStack {
-                                Image(systemName: "plus.circle.fill")
-                                Text("AGGIUNGI ARTICOLO")
-                                    .fontWeight(.semibold)
+                        if bollettaDaModificare == nil {
+                            Button {
+                                mostraNuovoArticolo = true
+                            } label: {
+                                Text("+ AGGIUNGI ARTICOLO")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity).padding()
                             }
-                            .font(.title3)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .buttonStyle(.bordered)
                         }
-                        .buttonStyle(.borderedProminent)
-
                     }
                     .padding(12)
                 }
             }
+        }
+        .alert("Nuovo articolo", isPresented: $mostraNuovoArticolo) {
+            TextField("Nome articolo", text: $nuovoArticolo)
+            Button("Aggiungi") {
+                let n = nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !n.isEmpty {
+                    archivio.aggiungiLavorazione(n)
+                    gruppi.append(GruppoLavorazione(nome: n, voci: [VoceLavorazione(nome: "")]))
+                    nuovoArticolo = ""
+                }
+            }
+            Button("Annulla", role: .cancel) { nuovoArticolo = "" }
         }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
@@ -670,21 +582,6 @@ struct NuovaBollettaView: View {
         else { rigaAttiva = 1 }
     }
 
-    private func aggiungiArticolo() {
-        let nome = nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !nome.isEmpty else { return }
-        let esiste = gruppi.contains { $0.nome.caseInsensitiveCompare(nome) == .orderedSame }
-        guard !esiste else {
-            nuovoArticolo = ""
-            mostraAggiungiArticolo = false
-            return
-        }
-        archivio.aggiungiLavorazione(nome)
-        gruppi.append(GruppoLavorazione(nome: nome, voci: [VoceLavorazione(nome: "")]))
-        nuovoArticolo = ""
-        mostraAggiungiArticolo = false
-    }
-
     private func salva() {
         var lista: [Lavorazione] = []
         for g in gruppi {
@@ -695,86 +592,6 @@ struct NuovaBollettaView: View {
         }
         archivio.salvaBolletta(Bolletta(id: bollettaDaModificare?.id ?? UUID(), data: data, lavorazioni: lista))
         presentationMode.wrappedValue.dismiss()
-    }
-}
-
-struct DataMeseSelector: View {
-    @Binding var data: Date
-    private let cal = Calendar(identifier: .gregorian)
-    private let mesi = ["GENNAIO", "FEBBRAIO", "MARZO", "APRILE", "MAGGIO", "GIUGNO", "LUGLIO", "AGOSTO", "SETTEMBRE", "OTTOBRE", "NOVEMBRE", "DICEMBRE"]
-
-    private var mese: Int { cal.component(.month, from: data) }
-    private var anno: Int { cal.component(.year, from: data) }
-    private var primoGiorno: Date { cal.date(from: DateComponents(year: anno, month: mese, day: 1))! }
-    private var giorniNelMese: Int { cal.range(of: .day, in: .month, for: primoGiorno)!.count }
-    private var offset: Int { (cal.component(.weekday, from: primoGiorno) + 5) % 7 }
-
-    private func cambiaMese(_ delta: Int) {
-        guard let nuovoMese = cal.date(byAdding: .month, value: delta, to: primoGiorno) else { return }
-        let y = cal.component(.year, from: nuovoMese)
-        let m = cal.component(.month, from: nuovoMese)
-        let giorno = min(cal.component(.day, from: data), cal.range(of: .day, in: .month, for: nuovoMese)!.count)
-        data = cal.date(from: DateComponents(year: y, month: m, day: giorno))!
-    }
-
-    var body: some View {
-        VStack(spacing: 14) {
-            Text("SCEGLI LA DATA")
-                .font(.title2.weight(.semibold))
-
-            HStack {
-                Button { cambiaMese(-1) } label: {
-                    Image(systemName: "chevron.left.circle.fill").font(.system(size: 34))
-                }
-                .accessibilityLabel("Mese precedente")
-                Spacer()
-                VStack(spacing: 2) {
-                    Text(mesi[mese - 1]).font(.title3.weight(.bold))
-                    Text(String(anno)).font(.headline).foregroundColor(.secondary)
-                }
-                Spacer()
-                Button { cambiaMese(1) } label: {
-                    Image(systemName: "chevron.right.circle.fill").font(.system(size: 34))
-                }
-                .accessibilityLabel("Mese successivo")
-            }
-            .padding(.horizontal, 8)
-
-            HStack(spacing: 0) {
-                ForEach(["L", "M", "M", "G", "V", "S", "D"], id: \.self) { g in
-                    Text(g).font(.caption.weight(.bold)).frame(maxWidth: .infinity)
-                }
-            }
-
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
-                ForEach(0..<(offset + giorniNelMese), id: \.self) { indice in
-                    if indice < offset {
-                        Color.clear.frame(height: 40)
-                    } else {
-                        let giorno = indice - offset + 1
-                        Button {
-                            data = cal.date(from: DateComponents(year: anno, month: mese, day: giorno))!
-                        } label: {
-                            Text(String(giorno))
-                                .font(.headline)
-                                .frame(maxWidth: .infinity, minHeight: 40)
-                                .background(cal.component(.day, from: data) == giorno ? Color.accentColor : Color.gray.opacity(0.12))
-                                .foregroundColor(cal.component(.day, from: data) == giorno ? .white : .primary)
-                                .clipShape(RoundedRectangle(cornerRadius: 9))
-                        }
-                    }
-                }
-            }
-
-            Text(data.formatted(.dateTime.day().month(.wide).year()))
-                .font(.title3.weight(.semibold))
-                .environment(\.locale, Locale(identifier: "it_IT"))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Color.gray.opacity(0.10))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-        }
-        .environment(\.locale, Locale(identifier: "it_IT"))
     }
 }
 
@@ -789,7 +606,12 @@ struct SelezionaDataModificaView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                DataMeseSelector(data: $data)
+                Text("SCEGLI LA DATA")
+                    .font(.title2)
+
+                DatePicker("Data", selection: $data, displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .labelsHidden()
 
                 Button("OK") {
                     cercaBollette()
@@ -882,301 +704,70 @@ struct DatiAnalizzatiView: View {
     @ObservedObject var archivio: Archivio
     @ObservedObject var analysisStore: PDFAnalysisStore
     @Environment(\.presentationMode) private var presentationMode
-    @State private var bollettaDaAprire: Bolletta?
-
-    private var giorniAzienda: [PDFAnalysisDay] {
-        var perData: [Date: [PDFAnalysisRow]] = [:]
-        for giorno in analysisStore.giorniAzienda() {
-            perData[giorno.date, default: []].append(contentsOf: giorno.rows)
-        }
-        return perData.keys.sorted().map { PDFAnalysisDay(date: $0, rows: perData[$0] ?? []) }
-    }
-
-    private var tutteLeDate: [Date] {
-        let nostre = Set(archivio.bollette.map { giornoSenzaOra($0.data) })
-        let azienda = Set(giorniAzienda.map { giornoSenzaOra($0.date) })
-        return Array(nostre.union(azienda)).sorted(by: >)
-    }
-
-    private func giornoSenzaOra(_ data: Date) -> Date {
-        Calendar.current.startOfDay(for: data)
-    }
-
-    private func bollettaNostra(per data: Date) -> Bolletta? {
-        archivio.bollette.first { giornoSenzaOra($0.data) == giornoSenzaOra(data) }
-    }
-
-    private func giornoAzienda(per data: Date) -> PDFAnalysisDay? {
-        giorniAzienda.first { giornoSenzaOra($0.date) == giornoSenzaOra(data) }
-    }
-
-    private func normalizza(_ testo: String) -> String {
-        testo.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "-", with: "")
-            .replacingOccurrences(of: "_", with: "")
-    }
-
-    private func confronto(_ nostra: Bolletta?, _ azienda: PDFAnalysisDay?) -> (nsOK: Bool, bagfulOK: Bool, bagfulMissing: Bool) {
-        guard let nostra else {
-            return (false, azienda != nil, false)
-        }
-        guard let azienda else {
-            return (true, false, true)
-        }
-
-        var aziendaMap: [String: Int] = [:]
-        for riga in azienda.rows {
-            aziendaMap[normalizza(riga.article), default: 0] += riga.quantity
-        }
-        var nostraMap: [String: Int] = [:]
-        for lavoro in nostra.lavorazioni {
-            let quantita = Int(lavoro.quantita) ?? 0
-            // Le celle vuote/zero dell'app equivalgono alle celle vuote
-            // dell'Excel aziendale: non devono creare una differenza.
-            guard quantita > 0 else { continue }
-            nostraMap[normalizza(lavoro.nome), default: 0] += quantita
-        }
-        return (true, nostraMap == aziendaMap, false)
-    }
-
-    private func coloreData(_ data: Date) -> Color {
-        let stato = confronto(bollettaNostra(per: data), giornoAzienda(per: data))
-        return (stato.nsOK && stato.bagfulOK) ? .green : .red
-    }
-
-    private func testoData(_ data: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "dd/MM/yyyy"
-        return formatter.string(from: data)
-    }
 
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                if tutteLeDate.isEmpty {
+                if analysisStore.analyses.isEmpty {
                     Spacer()
-                    Text("Nessuna bolletta caricata.")
-                        .font(.title3)
+                    Text("Nessun file azienda analizzato.").font(.title3)
+                    Text("Vai in FILE AZIENDA e premi CARICA.")
+                        .foregroundColor(.secondary).padding(.top, 4)
                     Spacer()
                 } else {
-                    HStack(spacing: 0) {
-                        Text("DATA")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 12)
+                    let righe = righeConfronto()
+                    let completo = !righe.isEmpty && righe.allSatisfy { $0.coincide }
+                    let totale = righe.reduce(0.0) { $0 + $1.totaleAzienda }
 
-                        Text("NS\nCARICATE")
-                            .font(.headline)
-                            .multilineTextAlignment(.center)
-                            .frame(width: 110)
-                            .padding(.vertical, 12)
-
-                        Text("BAGFUL")
-                            .font(.headline)
-                            .frame(width: 110)
-                            .multilineTextAlignment(.center)
-                            .padding(.vertical, 12)
-                    }
-                    .background(Color.gray.opacity(0.15))
-
-                    Divider()
-
-                    VStack(spacing: 10) {
-                        HStack(spacing: 12) {
-                            Button {
-                                analysisStore.salvaTutte()
-                            } label: {
-                                Label("SALVA ANALISI", systemImage: "square.and.arrow.down.fill")
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
-                            }
-                            .buttonStyle(.borderedProminent)
-
-                            Button {
-                                analysisStore.richiediReset = true
-                            } label: {
-                                Label("RESET ANALISI", systemImage: "trash.fill")
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                        .padding(.horizontal, 12)
-
-                        List {
-                            ForEach(tutteLeDate, id: \.self) { data in
-                            let nostra = bollettaNostra(per: data)
-                            let azienda = giornoAzienda(per: data)
-                            let stato = confronto(nostra, azienda)
-
-                            Button {
-                                if let nostra { bollettaDaAprire = nostra }
-                            } label: {
-                                HStack(spacing: 0) {
-                                    Text(testoData(data))
-                                        .font(.body)
-                                        .foregroundColor(coloreData(data))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                                    Text(stato.nsOK ? "✓" : "X")
-                                        .font(.title2.weight(.bold))
-                                        .foregroundColor(stato.nsOK ? .green : .red)
-                                        .frame(width: 110)
-
-                                    Text(stato.bagfulOK ? "✓" : (stato.bagfulMissing ? "XX" : "X"))
-                                        .font(.title2.weight(.bold))
-                                        .foregroundColor(stato.bagfulOK ? .green : .red)
-                                        .frame(width: 110)
-                                }
-                                .padding(.vertical, 8)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        }
-                        .listStyle(.plain)
-                    }
-                }
-            }
-            .navigationTitle("Dati analizzati")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
-                }
-            }
-            .alert("RESET ANALISI", isPresented: $analysisStore.richiediReset) {
-                Button("ANNULLA", role: .cancel) { }
-                Button("CONFERMA RESET", role: .destructive) {
-                    analysisStore.reset()
-                }
-            } message: {
-                Text("Vuoi cancellare tutte le analisi archiviate? Le bollette inserite nell'app NON verranno cancellate.")
-            }
-            .sheet(item: $bollettaDaAprire) { bolletta in
-                NuovaBollettaView(archivio: archivio, bollettaDaModificare: bolletta)
-            }
-        }
-        .navigationViewStyle(.stack)
-    }
-}
-
-
-struct ArchivioAnalisiView: View {
-    @ObservedObject var analysisStore: PDFAnalysisStore
-    @Environment(\.presentationMode) private var presentationMode
-
-    private var gruppiAnno: [(anno: Int, analisi: [PDFAnalysisResult])] {
-        let cal = Calendar.current
-        let grouped = Dictionary(grouping: analysisStore.analyses) {
-            cal.component(.year, from: $0.date ?? $0.days.first?.date ?? Date())
-        }
-        return grouped.keys.sorted(by: >).map { anno in
-            (anno, grouped[anno]!.sorted {
-                ($0.date ?? $0.days.first?.date ?? .distantPast) >
-                ($1.date ?? $1.days.first?.date ?? .distantPast)
-            })
-        }
-    }
-
-    private func periodo(_ a: PDFAnalysisResult) -> String {
-        let dates = a.days.map(\.date)
-        let start = dates.min() ?? a.date
-        let end = dates.max() ?? a.date
-        guard let start else { return "Periodo non disponibile" }
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "it_IT")
-        f.dateFormat = "dd MMM yyyy"
-        if let end, !Calendar.current.isDate(start, inSameDayAs: end) {
-            return "\(f.string(from: start)) – \(f.string(from: end))"
-        }
-        return f.string(from: start)
-    }
-
-    private func totale(_ a: PDFAnalysisResult) -> Double {
-        a.days.flatMap(\.rows).compactMap(\.total).reduce(0, +)
-    }
-
-    private func totaleAnno(_ analisi: [PDFAnalysisResult]) -> Double {
-        analisi.reduce(0) { $0 + totale($1) }
-    }
-
-    private func euro(_ value: Double) -> String {
-        value.formatted(.currency(code: "EUR"))
-    }
-
-    var body: some View {
-        NavigationView {
-            Group {
-                if gruppiAnno.isEmpty {
-                    VStack(spacing: 14) {
-                        Image(systemName: "archivebox")
-                            .font(.system(size: 48))
-                            .foregroundColor(.indigo)
-                        Text("ARCHIVIO ANALISI")
-                            .font(.title2.weight(.semibold))
-                        Text("Le analisi salvate compariranno qui, raggruppate per anno.")
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(28)
-                } else {
                     List {
-                        ForEach(gruppiAnno, id: \.anno) { gruppo in
-                            Section {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("TOTALE ANNUO")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundColor(.secondary)
-                                    Text(euro(totaleAnno(gruppo.analisi)))
-                                        .font(.system(size: 28, weight: .bold))
-                                        .foregroundColor(.green)
-                                }
-                                .padding(.vertical, 6)
+                        Section("CONFRONTO AZIENDA / BOLLETTE") {
+                            ForEach(righe) { riga in
+                                HStack(spacing: 10) {
+                                    Image(systemName: riga.coincide ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                        .foregroundColor(riga.coincide ? .green : .red)
+                                        .font(.title3)
 
-                                ForEach(gruppo.analisi) { analisi in
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        HStack {
-                                            Image(systemName: "doc.text.fill")
-                                                .foregroundColor(.indigo)
-                                            Text(analisi.fileName)
-                                                .font(.headline)
-                                                .lineLimit(2)
-                                            Spacer()
-                                        }
-                                        Text(periodo(analisi))
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                        HStack {
-                                            Text("Totale maturato")
-                                                .foregroundColor(.secondary)
-                                            Spacer()
-                                            Text(euro(totale(analisi)))
-                                                .font(.headline.weight(.semibold))
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(riga.articolo).font(.headline)
+                                        if riga.senzaData {
+                                            Text("SENZA DATA")
+                                                .font(.caption.weight(.semibold))
+                                                .foregroundColor(.orange)
                                         }
                                     }
-                                    .padding(.vertical, 7)
-                                }
-                            } header: {
-                                HStack {
-                                    Text(String(gruppo.anno))
-                                        .font(.title2.weight(.bold))
+
                                     Spacer()
-                                    Text(euro(totaleAnno(gruppo.analisi)))
-                                        .font(.headline.weight(.bold))
-                                        .foregroundColor(.green)
+                                    VStack(alignment: .trailing, spacing: 3) {
+                                        Text("AZIENDA: \(riga.quantitaAzienda)")
+                                        Text("TUE BOLLETTE: \(riga.quantitaMia)")
+                                            .foregroundColor(riga.coincide ? .green : .primary)
+                                    }
+                                    .font(.subheadline)
                                 }
+                                .padding(.vertical, 5)
                             }
                         }
+
+                        Section {
+                            VStack(spacing: 8) {
+                                Text(completo ? "✓ CONFRONTO COMPLETO" : "CONFRONTO NON COMPLETO")
+                                    .font(.headline)
+                                    .foregroundColor(completo ? .green : .orange)
+
+                                Text("TOTALE MATURATO")
+                                    .font(.subheadline.weight(.semibold))
+
+                                Text(euro(totale))
+                                    .font(.system(size: 32, weight: .bold))
+                                    .foregroundColor(completo ? .green : .primary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                        }
                     }
-                    .listStyle(.insetGrouped)
                 }
             }
-            .navigationTitle("Archivio analisi")
+            .navigationTitle("Analisi")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -1186,7 +777,67 @@ struct ArchivioAnalisiView: View {
         }
         .navigationViewStyle(.stack)
     }
+
+    private struct RigaConfronto: Identifiable {
+        let id = UUID()
+        let articolo: String
+        let quantitaAzienda: Int
+        let quantitaMia: Int
+        let totaleAzienda: Double
+        let senzaData: Bool
+        var coincide: Bool { quantitaAzienda == quantitaMia }
+    }
+
+    private func righeConfronto() -> [RigaConfronto] {
+        var azienda: [String: (nome: String, quantita: Int, totale: Double, senzaData: Bool)] = [:]
+
+        for analysis in analysisStore.analyses {
+            let rows = analysis.rows
+            for row in rows {
+                let key = normalizza(row.article)
+                guard !key.isEmpty else { continue }
+                let totaleRiga = row.total ?? ((row.unitPrice ?? 0) * Double(row.quantity))
+                let dataPresente = !analysis.days.isEmpty
+                azienda[key, default: (row.article, 0, 0, !dataPresente)].quantita += row.quantity
+                azienda[key, default: (row.article, 0, 0, !dataPresente)].totale += totaleRiga
+                if dataPresente == false {
+                    azienda[key, default: (row.article, 0, 0, true)].senzaData = true
+                }
+            }
+        }
+
+        var mie: [String: Int] = [:]
+        for bolletta in archivio.bollette {
+            for lavoro in bolletta.lavorazioni {
+                let key = normalizza(lavoro.nome)
+                mie[key, default: 0] += Int(lavoro.quantita) ?? 0
+            }
+        }
+
+        return azienda.values.map { item in
+            let key = normalizza(item.nome)
+            return RigaConfronto(
+                articolo: item.nome,
+                quantitaAzienda: item.quantita,
+                quantitaMia: mie[key] ?? 0,
+                totaleAzienda: item.totale,
+                senzaData: item.senzaData
+            )
+        }
+        .sorted { normalizza($0.articolo) < normalizza($1.articolo) }
+    }
+
+    private func euro(_ valore: Double) -> String {
+        valore.formatted(.currency(code: "EUR"))
+    }
+
+    private func normalizza(_ s: String) -> String {
+        s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+    }
 }
+
 
 struct ConfrontoBollettaView: View {
     let bolletta: Bolletta

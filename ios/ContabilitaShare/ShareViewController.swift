@@ -65,10 +65,7 @@ final class ShareViewController: UIViewController {
                     return
                 }
 
-                guard let nome = self.nomeDaProvider(provider), !nome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    DispatchQueue.main.async { self.termina() }
-                    return
-                }
+                let nome = self.nomeDaProvider(provider) ?? "prospetto"
                 let ok = self.salvaSuPasteboard(data: data, nome: nome)
 
                 DispatchQueue.main.async {

@@ -26,11 +26,8 @@ final class PDFTransferStore: ObservableObject {
             return
         }
 
-        guard let name = (pasteboard.value(forPasteboardType: Self.namePasteboardType) as? String),
-              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            ricarica()
-            return
-        }
+        let name = (pasteboard.value(forPasteboardType: Self.namePasteboardType) as? String)
+            ?? "prospetto.xlsx"
 
         // Un nuovo import sostituisce quello precedente.
         eliminaTuttiIFileLocali()
@@ -87,9 +84,9 @@ final class PDFTransferStore: ObservableObject {
 
         let base = (nome as NSString).deletingPathExtension
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !base.isEmpty else { return }
+        let safeBase = base.isEmpty ? "prospetto" : base
 
-        let url = folder.appendingPathComponent("\(base).\(ext)")
+        let url = folder.appendingPathComponent("\(safeBase).\(ext)")
 
         do {
             try data.write(to: url, options: .atomic)
