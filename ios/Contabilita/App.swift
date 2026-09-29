@@ -19,7 +19,6 @@ struct ContabilitaRootView: View {
     @State private var nuovaBolletta = false
     @State private var modificaBolletta = false
     @State private var mostraDatiAnalizzati = false
-    @State private var mostraArchivioAnalisi = false
     @State private var mostraPDF = false
 
     private var isPad: Bool {
@@ -51,12 +50,8 @@ struct ContabilitaRootView: View {
             DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore)
                 .navigationViewStyle(.stack)
         }
-        .sheet(isPresented: $mostraArchivioAnalisi) {
-            ArchivioAnalisiView(analysisStore: analysisStore)
-                .navigationViewStyle(.stack)
-        }
         .sheet(isPresented: $mostraPDF) {
-            PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore, archivio: archivio)
+            PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore)
                 .navigationViewStyle(.stack)
         }
         .onAppear {
@@ -91,7 +86,7 @@ struct ContabilitaRootView: View {
                         dashboardButton("MODIFICA BOLLETTA", icon: "pencil.circle.fill", tint: .blue) {
                             modificaBolletta = true
                         }
-                        dashboardButton("ANALISI", icon: "chart.bar.fill", tint: .purple) {
+                        dashboardButton("DATI ANALIZZATI", icon: "chart.bar.fill", tint: .purple) {
                             mostraDatiAnalizzati = true
                         }
                         dashboardButton(
@@ -104,11 +99,6 @@ struct ContabilitaRootView: View {
                         }
                     }
                     .frame(maxWidth: min(900, geo.size.width - 80))
-
-                    dashboardButton("ARCHIVIO ANALISI", icon: "archivebox.fill", tint: .indigo) {
-                        mostraArchivioAnalisi = true
-                    }
-                    .frame(maxWidth: 440)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 40)
@@ -127,11 +117,8 @@ struct ContabilitaRootView: View {
                 dashboardButton("MODIFICA BOLLETTA", icon: "pencil.circle.fill", tint: .blue) {
                     modificaBolletta = true
                 }
-                dashboardButton("ANALISI", icon: "chart.bar.fill", tint: .purple) {
+                dashboardButton("DATI ANALIZZATI", icon: "chart.bar.fill", tint: .purple) {
                     mostraDatiAnalizzati = true
-                }
-                dashboardButton("ARCHIVIO ANALISI", icon: "archivebox.fill", tint: .indigo) {
-                    mostraArchivioAnalisi = true
                 }
                 dashboardButton(
                     pdfTransfer.files.isEmpty ? "IMPORTA FILE AZIENDA" : "FILE AZIENDA  •  \(pdfTransfer.files.count)",

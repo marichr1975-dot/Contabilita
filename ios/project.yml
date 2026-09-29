@@ -37,8 +37,8 @@ targets:
       path: Contabilita/Info.plist
       properties:
         CFBundleDisplayName: Contabilità
-        CFBundleShortVersionString: "1.4"
-        CFBundleVersion: "14"
+        CFBundleShortVersionString: "1.5"
+        CFBundleVersion: "15"
         UILaunchScreen: {}
         CFBundleURLTypes:
           - CFBundleURLName: com.gotrail.contabilita.import
@@ -65,8 +65,8 @@ targets:
       properties:
         CFBundleDisplayName: Contabilità
         CFBundlePackageType: XPC!
-        CFBundleShortVersionString: "1.4"
-        CFBundleVersion: "14"
+        CFBundleShortVersionString: "1.5"
+        CFBundleVersion: "15"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController

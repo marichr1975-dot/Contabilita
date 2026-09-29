@@ -32,11 +32,17 @@ struct Bolletta: Identifiable, Codable {
 final class Archivio: ObservableObject {
     @Published var bollette: [Bolletta] = []
     @Published var nomiLavorazioni: [String] = [
+        "GLAM",
+        "GLAM XL",
+        "ESSENTIAL",
+        "CLOSE",
+        "CASE",
+        "TRAINING",
         "MESSENGER",
         "BAGPACK",
         "TODAY",
         "ACTIVITY",
-        "ZAINI MARIN",
+        "ZAINI MARINA",
         "CLASSY",
         "ZAINO PRO",
         "case marina",
@@ -167,7 +173,7 @@ struct ContentView: View {
                 ArchivioAnalisiView(analysisStore: analysisStore)
             }
             .sheet(isPresented: $mostraPDF) {
-                PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore, archivio: archivio)
+                PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore)
             }
             .onAppear { aggiornaPDF() }
             .onChange(of: scenePhase) { phase in
@@ -225,7 +231,6 @@ struct ContentView: View {
 struct PDFImportatiView: View {
     @ObservedObject var store: PDFTransferStore
     @ObservedObject var analysisStore: PDFAnalysisStore
-    @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
     @State private var pdfDaMostrare: URL?
     @State private var analisiInCorso: URL?
@@ -249,15 +254,11 @@ struct PDFImportatiView: View {
                     List(store.files, id: \.self) { file in
                         HStack(spacing: 10) {
                             Image(systemName: "doc.fill").foregroundColor(.teal)
-                            Text(file.lastPathComponent)
-                                .lineLimit(2)
-                                .font(isFileGiaVisto(file) ? .body : .body.weight(.bold))
-                                .foregroundColor(.primary)
+                            Text(file.lastPathComponent).lineLimit(2).foregroundColor(.primary)
                             Spacer()
                             Button("CARICA") {
                                 analisiInCorso = file
                                 analysisStore.analizza(file: file, bollette: archivio.bollette)
-                                segnaFileComeVisto(file)
                                 analisiInCorso = nil
                                 messaggioCaricamento = "✓ FILE CARICATO E ANALIZZATO"
                                 mostraConfermaCaricamento = true
@@ -298,18 +299,6 @@ struct PDFImportatiView: View {
             }
         }
         .navigationViewStyle(.stack)
-    }
-
-    private func chiaveFile(_ file: URL) -> String {
-        "contabilita_file_visto_\(file.lastPathComponent)"
-    }
-
-    private func isFileGiaVisto(_ file: URL) -> Bool {
-        UserDefaults.standard.bool(forKey: chiaveFile(file))
-    }
-
-    private func segnaFileComeVisto(_ file: URL) {
-        UserDefaults.standard.set(true, forKey: chiaveFile(file))
     }
 }
 
@@ -887,38 +876,49 @@ struct DatiAnalizzatiView: View {
     }
 
     private func normalizza(_ testo: String) -> String {
-        testo.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        let base = testo.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "-", with: "")
             .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: ".", with: "")
+        // Compatibilità con le bollette inserite nelle versioni precedenti.
+        if base == "zainimarin" { return "zainimarina" }
+        return base
     }
 
-    private func confronto(_ nostra: Bolletta?, _ azienda: PDFAnalysisDay?) -> (nsOK: Bool, bagfulOK: Bool, bagfulMissing: Bool) {
-        guard let nostra else {
-            return (false, azienda != nil, false)
+    private func quantitaNostreTotali() -> [String: Int] {
+        var result: [String: Int] = [:]
+        for bolletta in archivio.bollette {
+            for lavoro in bolletta.lavorazioni {
+                let q = Int(lavoro.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+                guard q > 0 else { continue }
+                result[normalizza(lavoro.nome), default: 0] += q
+            }
         }
-        guard let azienda else {
-            return (true, false, true)
-        }
+        return result
+    }
 
-        var aziendaMap: [String: Int] = [:]
-        for riga in azienda.rows {
-            aziendaMap[normalizza(riga.article), default: 0] += riga.quantity
+    private func quantitaAziendaTotali() -> [String: Int] {
+        var result: [String: Int] = [:]
+        for giorno in giorniAzienda {
+            for riga in giorno.rows {
+                guard riga.quantity > 0 else { continue }
+                result[normalizza(riga.article), default: 0] += riga.quantity
+            }
         }
-        var nostraMap: [String: Int] = [:]
-        for lavoro in nostra.lavorazioni {
-            let quantita = Int(lavoro.quantita) ?? 0
-            // Le celle vuote/zero dell'app equivalgono alle celle vuote
-            // dell'Excel aziendale: non devono creare una differenza.
-            guard quantita > 0 else { continue }
-            nostraMap[normalizza(lavoro.nome), default: 0] += quantita
-        }
-        return (true, nostraMap == aziendaMap, false)
+        return result
+    }
+
+    private func confrontoTotale() -> (ok: Bool, nostre: [String: Int], azienda: [String: Int]) {
+        let nostre = quantitaNostreTotali()
+        let azienda = quantitaAziendaTotali()
+        return (nostre == azienda, nostre, azienda)
     }
 
     private func coloreData(_ data: Date) -> Color {
-        let stato = confronto(bollettaNostra(per: data), giornoAzienda(per: data))
-        return (stato.nsOK && stato.bagfulOK) ? .green : .red
+        let nostra = bollettaNostra(per: data) != nil
+        let azienda = giornoAzienda(per: data) != nil
+        return (nostra && azienda) ? .primary : .red
     }
 
     private func testoData(_ data: Date) -> String {
@@ -930,91 +930,125 @@ struct DatiAnalizzatiView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
+                let totale = confrontoTotale()
+
                 if tutteLeDate.isEmpty {
                     Spacer()
                     Text("Nessuna bolletta caricata.")
                         .font(.title3)
                     Spacer()
                 } else {
-                    HStack(spacing: 0) {
-                        Text("DATA")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 12)
-
-                        Text("NS\nCARICATE")
-                            .font(.headline)
-                            .multilineTextAlignment(.center)
-                            .frame(width: 110)
-                            .padding(.vertical, 12)
-
-                        Text("BAGFUL")
-                            .font(.headline)
-                            .frame(width: 110)
-                            .multilineTextAlignment(.center)
-                            .padding(.vertical, 12)
-                    }
-                    .background(Color.gray.opacity(0.15))
-
-                    Divider()
-
-                    VStack(spacing: 10) {
-                        HStack(spacing: 12) {
-                            Button {
-                                analysisStore.salvaTutte()
-                            } label: {
-                                Label("SALVA ANALISI", systemImage: "square.and.arrow.down.fill")
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            VStack(spacing: 8) {
+                                Text("CONFRONTO COMPLESSIVO")
                                     .font(.headline)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
-                            }
-                            .buttonStyle(.borderedProminent)
-
-                            Button {
-                                analysisStore.richiediReset = true
-                            } label: {
-                                Label("RESET ANALISI", systemImage: "trash.fill")
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                        .padding(.horizontal, 12)
-
-                        List {
-                            ForEach(tutteLeDate, id: \.self) { data in
-                            let nostra = bollettaNostra(per: data)
-                            let azienda = giornoAzienda(per: data)
-                            let stato = confronto(nostra, azienda)
-
-                            Button {
-                                if let nostra { bollettaDaAprire = nostra }
-                            } label: {
-                                HStack(spacing: 0) {
-                                    Text(testoData(data))
-                                        .font(.body)
-                                        .foregroundColor(coloreData(data))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                                    Text(stato.nsOK ? "✓" : "X")
-                                        .font(.title2.weight(.bold))
-                                        .foregroundColor(stato.nsOK ? .green : .red)
-                                        .frame(width: 110)
-
-                                    Text(stato.bagfulOK ? "✓" : (stato.bagfulMissing ? "XX" : "X"))
-                                        .font(.title2.weight(.bold))
-                                        .foregroundColor(stato.bagfulOK ? .green : .red)
-                                        .frame(width: 110)
+                                HStack(spacing: 12) {
+                                    Image(systemName: totale.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                        .font(.system(size: 42, weight: .bold))
+                                        .foregroundColor(totale.ok ? .green : .red)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(totale.ok ? "QUANTITÀ COINCIDONO" : "QUANTITÀ NON COINCIDONO")
+                                            .font(.headline)
+                                        Text("Tutte le bollette caricate confrontate con tutto il file aziendale")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
                                 }
-                                .padding(.vertical, 8)
-                                .contentShape(Rectangle())
+
+                                let totalePezziAzienda = totale.azienda.values.reduce(0, +)
+                                let totalePezziNostri = totale.nostre.values.reduce(0, +)
+                                HStack {
+                                    Text("Nostre: \(totalePezziNostri) pezzi")
+                                    Spacer()
+                                    Text("Azienda: \(totalePezziAzienda) pezzi")
+                                }
+                                .font(.subheadline.weight(.semibold))
+
+                                if totale.ok {
+                                    let euro = analysisStore.totaleAzienda()
+                                    HStack {
+                                        Text("TOTALE MATURATO / FATTURABILE")
+                                        Spacer()
+                                        Text(euro, format: .currency(code: "EUR"))
+                                            .font(.title3.weight(.bold))
+                                    }
+                                    .padding(.top, 4)
+                                }
                             }
-                            .buttonStyle(.plain)
+                            .padding(14)
+                            .background(Color.gray.opacity(0.10))
+                            .cornerRadius(14)
+                            .padding(.horizontal, 12)
+
+                            if !totale.ok {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("DIFFERENZE")
+                                        .font(.headline)
+                                    ForEach(Array(Set(totale.nostre.keys).union(totale.azienda.keys)).sorted(), id: \.self) { articolo in
+                                        let n = totale.nostre[articolo] ?? 0
+                                        let a = totale.azienda[articolo] ?? 0
+                                        if n != a {
+                                            HStack {
+                                                Text(artigo)
+                                                Spacer()
+                                                Text("\(n) / \(a)")
+                                                    .fontWeight(.bold)
+                                                    .foregroundColor(.red)
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(14)
+                                .background(Color.red.opacity(0.07))
+                                .cornerRadius(14)
+                                .padding(.horizontal, 12)
+                            }
+
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text("DATE CARICATE")
+                                    .font(.headline)
+                                    .padding(.horizontal, 12)
+                                    .padding(.bottom, 8)
+                                ForEach(tutteLeDate, id: \.self) { data in
+                                    HStack {
+                                        Text(testoData(data))
+                                            .foregroundColor(coloreData(data))
+                                        Spacer()
+                                        Image(systemName: bollettaNostra(per: data) != nil ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                            .foregroundColor(bollettaNostra(per: data) != nil ? .green : .red)
+                                        Image(systemName: giornoAzienda(per: data) != nil ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                            .foregroundColor(giornoAzienda(per: data) != nil ? .green : .red)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        if let nostra = bollettaNostra(per: data) { bollettaDaAprire = nostra }
+                                    }
+                                    Divider()
+                                }
+                            }
+
+                            HStack(spacing: 12) {
+                                Button { analysisStore.salvaTutte() } label: {
+                                    Label("SALVA ANALISI", systemImage: "square.and.arrow.down.fill")
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                }
+                                .buttonStyle(.borderedProminent)
+
+                                Button { analysisStore.richiediReset = true } label: {
+                                    Label("RESET", systemImage: "trash.fill")
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                            .padding(.horizontal, 12)
                         }
-                        }
-                        .listStyle(.plain)
+                        .padding(.vertical, 12)
                     }
                 }
             }
@@ -1025,11 +1059,13 @@ struct DatiAnalizzatiView: View {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
             }
-            .alert("Confermi il reset?", isPresented: $analysisStore.richiediReset) {
-                Button("NO", role: .cancel) { }
-                Button("SÌ", role: .destructive) {
+            .alert("RESET ANALISI", isPresented: $analysisStore.richiediReset) {
+                Button("ANNULLA", role: .cancel) { }
+                Button("CONFERMA RESET", role: .destructive) {
                     analysisStore.reset()
                 }
+            } message: {
+                Text("Vuoi cancellare tutte le analisi archiviate? Le bollette inserite nell'app NON verranno cancellate.")
             }
             .sheet(item: $bollettaDaAprire) { bolletta in
                 NuovaBollettaView(archivio: archivio, bollettaDaModificare: bolletta)

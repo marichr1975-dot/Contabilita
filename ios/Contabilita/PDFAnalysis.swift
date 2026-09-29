@@ -120,6 +120,18 @@ final class PDFAnalysisStore: ObservableObject {
         salvaTutte()
     }
 
+    func totaleAzienda() -> Double {
+        var totale = 0.0
+        for analysis in analyses {
+            for day in analysis.days {
+                for row in day.rows {
+                    if let value = row.total { totale += value }
+                }
+            }
+        }
+        return totale
+    }
+
     func giorniAzienda() -> [PDFAnalysisDay] {
         var result: [PDFAnalysisDay] = []
         for analysis in analyses {
