@@ -28,19 +28,6 @@ echo.
 git status --short
 echo.
 
-git diff --quiet
-if %errorlevel%==0 (
-    git diff --cached --quiet
-    if %errorlevel%==0 (
-        echo *** NESSUNA MODIFICA TROVATA ***
-        echo.
-        echo Controlla di aver sostituito la cartella IOS.
-        echo.
-        pause
-        exit /b 0
-    )
-)
-
 echo ==========================================
 echo AGGIUNGO I FILE
 echo ==========================================
@@ -71,6 +58,24 @@ if errorlevel 1 (
 
 echo.
 echo ==========================================
+echo ALLINEAMENTO CON GITHUB
+echo ==========================================
+echo.
+
+git pull --rebase origin main
+
+if errorlevel 1 (
+    echo.
+    echo *** ERRORE DURANTE IL PULL/REBASE ***
+    echo.
+    echo Controlla eventuali conflitti Git.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
+echo ==========================================
 echo PUSH SU GITHUB
 echo ==========================================
 echo.
@@ -87,7 +92,7 @@ if errorlevel 1 (
 
 echo.
 echo ==========================================
-echo       PUSH COMPLETATO CORRETTAMENTE
+echo   PUSH COMPLETATO CORRETTAMENTE
 echo ==========================================
 echo.
 echo Il workflow GitHub Actions dovrebbe partire
