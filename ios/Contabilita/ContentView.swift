@@ -467,7 +467,6 @@ struct NuovaBollettaView: View {
     @State private var mostraAggiungiArticolo = false
     @State private var mostraFotocamera = false
     @State private var messaggioScanner = ""
-    @State private var mostraRisultatoScanner = false
     @State private var risultatoOCR: BollettaOCRResult?
     @State private var mostraMascheraDopoOCR = false
 
@@ -523,37 +522,72 @@ struct NuovaBollettaView: View {
     }
 
     var body: some View {
-        NavigationView {
-            Group {
-                // Per una nuova bolletta non mostriamo la vecchia maschera prima
-                // della fotocamera: resta nascosta fino a quando l'utente applica
-                // i dati OCR.
-                if bollettaDaModificare != nil || mostraMascheraDopoOCR {
-                    mascheraBolletta
+        Group {
+            if mostraFotocamera {
+                // Fotocamera e risultato OCR vivono nello stesso contenitore.
+                // Dopo lo scatto sostituiamo direttamente la fotocamera con il risultato,
+                // senza sheet/fullScreenCover annidati che su iOS possono lasciare bianco.
+                if let ocrResult = risultatoOCR {
+                    OCRRisultatoView(
+                        result: ocrResult,
+                        applica: {
+                            applicaScansione(ocrResult)
+                            risultatoOCR = nil
+                            mostraFotocamera = false
+                            mostraMascheraDopoOCR = true
+                        },
+                        chiudi: {
+                            risultatoOCR = nil
+                            mostraFotocamera = false
+                            presentationMode.wrappedValue.dismiss()
+                        }
+                    )
                 } else {
-                    Color.clear.ignoresSafeArea()
+                    BollettaScannerView(
+                        articleNames: gruppi.flatMap { g in
+                            g.voci.map { $0.nome.isEmpty ? g.nome : "\(g.nome) \($0.nome)" }
+                        },
+                        completion: { result in
+                            risultatoOCR = result
+                        },
+                        cancel: {
+                            mostraFotocamera = false
+                            presentationMode.wrappedValue.dismiss()
+                        }
+                    )
+                    .ignoresSafeArea()
                 }
-            }
-            .navigationTitle(dataConfermata ? "Elenco lavori" : (bollettaDaModificare == nil ? "Nuova bolletta" : "Modifica bolletta"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Annulla") { presentationMode.wrappedValue.dismiss() }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if dataConfermata {
-                        HStack(spacing: 14) {
-                            Button { mostraFotocamera = true } label: {
-                                Image(systemName: "camera.fill")
-                            }
-                            if bollettaDaModificare != nil {
-                                Button("CANCELLA") {
-                                    mostraConfermaCancella = true
+            } else {
+                NavigationView {
+                    Group {
+                        if bollettaDaModificare != nil || mostraMascheraDopoOCR {
+                            mascheraBolletta
+                        } else {
+                            Color.clear.ignoresSafeArea()
+                        }
+                    }
+                    .navigationTitle(dataConfermata ? "Elenco lavori" : (bollettaDaModificare == nil ? "Nuova bolletta" : "Modifica bolletta"))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button("Annulla") { presentationMode.wrappedValue.dismiss() }
+                        }
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            if dataConfermata {
+                                HStack(spacing: 14) {
+                                    Button { mostraFotocamera = true } label: {
+                                        Image(systemName: "camera.fill")
+                                    }
+                                    if bollettaDaModificare != nil {
+                                        Button("CANCELLA") {
+                                            mostraConfermaCancella = true
+                                        }
+                                        .foregroundColor(.red)
+                                    }
+                                    Button("SALVA") { salva() }
+                                        .font(.system(size: 17, weight: .bold))
                                 }
-                                .foregroundColor(.red)
                             }
-                            Button("SALVA") { salva() }
-                                .font(.system(size: 17, weight: .bold))
                         }
                     }
                 }
@@ -570,40 +604,6 @@ struct NuovaBollettaView: View {
         } message: {
             Text("Vuoi cancellare definitivamente questa bolletta?")
         }
-        .sheet(isPresented: $mostraFotocamera, onDismiss: {
-            // La fotocamera deve essere completamente chiusa prima di aprire
-            // la schermata del risultato OCR. Aprire due sheet nello stesso
-            // istante lasciava la vecchia schermata sotto e poteva bloccare la UI.
-            guard risultatoOCR != nil else { return }
-            DispatchQueue.main.async {
-                mostraRisultatoScanner = true
-            }
-        }) {
-            BollettaScannerView(articleNames: gruppi.flatMap { g in
-                g.voci.map { $0.nome.isEmpty ? g.nome : "\(g.nome) \($0.nome)" }
-            }) { result in
-                // Salviamo soltanto il risultato. La schermata OCR viene
-                // aperta nell'onDismiss, quando la fotocamera è già chiusa.
-                risultatoOCR = result
-            }
-        }
-        .fullScreenCover(isPresented: $mostraRisultatoScanner) {
-            if let ocrResult = risultatoOCR {
-                OCRRisultatoView(
-                    result: ocrResult,
-                    applica: {
-                        applicaScansione(ocrResult)
-                        mostraRisultatoScanner = false
-                        mostraMascheraDopoOCR = true
-                    },
-                    chiudi: {
-                        mostraRisultatoScanner = false
-                        risultatoOCR = nil
-                        presentationMode.wrappedValue.dismiss()
-                    }
-                )
-            }
-        }
         .sheet(isPresented: $mostraAggiungiArticolo) {
             NavigationView {
                 Form {
@@ -612,10 +612,8 @@ struct NuovaBollettaView: View {
                             .textInputAutocapitalization(.sentences)
                     }
                     Section {
-                        Button("AGGIUNGI") {
-                            aggiungiArticolo()
-                        }
-                        .disabled(nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("AGGIUNGI") { aggiungiArticolo() }
+                            .disabled(nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
                 .navigationTitle("Aggiungi articolo")
@@ -627,183 +625,11 @@ struct NuovaBollettaView: View {
             }
         }
         .onAppear {
-            if gruppi.isEmpty && bollettaDaModificare == nil {
-                gruppi = gruppiBollettaDaNomi()
-                let standard = Set(gruppi.map { $0.nome.lowercased() })
-                gruppi.append(contentsOf: archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
-            }
-
-            // Nuova bolletta: nessuna richiesta di inserimento data.
-            // Dopo l'eventuale richiesta del permesso fotocamera, iOS apre
-            // direttamente la fotocamera. La data viene letta dalla foto.
             if bollettaDaModificare == nil && !mostraFotocamera {
                 dataConfermata = true
-                DispatchQueue.main.async {
-                    mostraFotocamera = true
-                }
+                DispatchQueue.main.async { mostraFotocamera = true }
             }
         }
-    }
-
-    private var scegliData: some View {
-        VStack(spacing: 16) {
-            Button {
-                mostraFotocamera = true
-            } label: {
-                Label("FOTOGRAFA BOLLETTA", systemImage: "camera.fill")
-                    .font(.title3.weight(.bold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.orange)
-
-            DataMeseSelector(data: $data)
-            Button {
-                dataConfermata = true
-                rigaAttiva = 0
-            } label: {
-                Text("CONFERMA DATA").font(.title2.weight(.semibold))
-                    .frame(maxWidth: .infinity).padding()
-            }
-            .buttonStyle(.borderedProminent)
-            Spacer()
-        }
-        .padding(22)
-    }
-
-    private var mascheraBolletta: some View {
-        VStack(spacing: 0) {
-            intestazioneFissa
-            Divider()
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(spacing: 10) {
-                        ForEach(gruppi.indices, id: \.self) { g in
-                            gruppoView(g, proxy: proxy)
-                        }
-
-                        Button { mostraAggiungiArticolo = true } label: {
-                            HStack {
-                                Image(systemName: "plus.circle.fill")
-                                Text("AGGIUNGI ARTICOLO")
-                                    .fontWeight(.semibold)
-                            }
-                            .font(.title3)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                    }
-                    .padding(12)
-                }
-            }
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("OK") { prossimaRiga() }
-                    .font(.headline)
-            }
-        }
-    }
-
-    private var intestazioneFissa: some View {
-        VStack(spacing: 5) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading) {
-                    Text("NOME").font(.caption)
-                    Text("data").font(.headline)
-                }
-                Spacer()
-                VStack(spacing: 1) {
-                    Text("elenco").font(.headline)
-                    Text("lavori").font(.headline)
-                }
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(Color.black).foregroundColor(.white)
-                Text("bagful")
-                    .font(.system(size: 30, weight: .bold))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-
-            HStack {
-                Text(data.formatted(date: .numeric, time: .omitted))
-                    .font(.title3)
-                    .foregroundColor(.blue)
-                Spacer()
-                Text("QUANTITÀ").font(.headline)
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(Color(white: 0.97))
-    }
-
-    private func gruppoView(_ g: Int, proxy: ScrollViewProxy) -> some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .bottom) {
-                Text(gruppi[g].nome).font(.headline)
-                Spacer()
-                Text("quantità").font(.headline)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-
-            ForEach(gruppi[g].voci.indices, id: \.self) { v in
-                let flat = indicePiatto(g, v)
-                HStack(spacing: 8) {
-                    Text("□").font(.title3).frame(width: 24)
-                    Text(gruppi[g].voci[v].nome)
-                        .font(.title3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    TextField("", text: binding(g: g, v: v))
-                        .font(.system(size: 22))
-                        .foregroundColor(.blue)
-                        .multilineTextAlignment(.center)
-                        .keyboardType(.numberPad)
-                        .frame(width: 90, height: 44)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .focused($rigaAttiva, equals: flat)
-                        .id(flat)
-                }
-                .padding(.horizontal, 10).padding(.vertical, 5)
-            }
-        }
-        .background(RoundedRectangle(cornerRadius: 3).stroke(Color.gray.opacity(0.65), lineWidth: 1))
-    }
-
-    private func binding(g: Int, v: Int) -> Binding<String> {
-        Binding(
-            get: { gruppi[g].voci[v].quantita },
-            set: { gruppi[g].voci[v].quantita = $0 }
-        )
-    }
-
-    private func indicePiatto(_ g: Int, _ v: Int) -> Int {
-        var n = 0
-        for i in 0..<g { n += gruppi[i].voci.count }
-        return n + v
-    }
-
-    private func prossimaRiga() {
-        if let r = rigaAttiva { rigaAttiva = r + 1 }
-        else { rigaAttiva = 1 }
-    }
-
-    private func aggiungiArticolo() {
-        let nome = nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !nome.isEmpty else { return }
-        let esiste = gruppi.contains { $0.nome.caseInsensitiveCompare(nome) == .orderedSame }
-        guard !esiste else {
-            nuovoArticolo = ""
-            mostraAggiungiArticolo = false
-            return
-        }
-        archivio.aggiungiLavorazione(nome)
-        gruppi.append(GruppoLavorazione(nome: nome, voci: [VoceLavorazione(nome: "")]))
-        nuovoArticolo = ""
-        mostraAggiungiArticolo = false
     }
 
     private func applicaScansione(_ result: BollettaOCRResult) {

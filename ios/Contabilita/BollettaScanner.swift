@@ -11,10 +11,10 @@ struct BollettaOCRResult {
 struct BollettaScannerView: UIViewControllerRepresentable {
     let articleNames: [String]
     let completion: (BollettaOCRResult) -> Void
-    @Environment(\.presentationMode) private var presentationMode
+    let cancel: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(articleNames: articleNames, completion: completion, dismiss: { self.presentationMode.wrappedValue.dismiss() })
+        Coordinator(articleNames: articleNames, completion: completion, cancel: cancel)
     }
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
@@ -31,25 +31,25 @@ struct BollettaScannerView: UIViewControllerRepresentable {
     final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
         let articleNames: [String]
         let completion: (BollettaOCRResult) -> Void
-        let dismiss: () -> Void
+        let cancel: () -> Void
 
-        init(articleNames: [String], completion: @escaping (BollettaOCRResult) -> Void, dismiss: @escaping () -> Void) {
+        init(articleNames: [String], completion: @escaping (BollettaOCRResult) -> Void, cancel: @escaping () -> Void) {
             self.articleNames = articleNames
             self.completion = completion
-            self.dismiss = dismiss
+            self.cancel = cancel
         }
 
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { dismiss() }
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { cancel() }
 
         func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            guard let image = info[.originalImage] as? UIImage, let cgImage = image.cgImage else { dismiss(); return }
+            guard let image = info[.originalImage] as? UIImage, let cgImage = image.cgImage else { cancel(); return }
             let articleNames = self.articleNames
             let completion = self.completion
             let dismiss = self.dismiss
             let request = VNRecognizeTextRequest { request, _ in
                 let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
                 let result = Self.parse(observations, articleNames: articleNames)
-                DispatchQueue.main.async { completion(result); dismiss() }
+                DispatchQueue.main.async { completion(result) }
             }
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
@@ -64,7 +64,7 @@ struct BollettaScannerView: UIViewControllerRepresentable {
                 } catch {
                     DispatchQueue.main.async {
                         completion(BollettaOCRResult(date: nil, quantities: [:], rawText: "ERRORE: impossibile leggere la foto."))
-                        dismiss()
+                        cancel()
                     }
                 }
             }
