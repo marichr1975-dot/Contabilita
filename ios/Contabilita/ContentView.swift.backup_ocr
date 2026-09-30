@@ -307,7 +307,7 @@ struct PDFImportatiView: View {
 struct OCRRisultatoView: View {
     let result: BollettaOCRResult
     let applica: () -> Void
-    let chiudi: () -> Void
+    @Environment(\.presentationMode) private var presentationMode
 
     private var dataTesto: String {
         guard let date = result.date else { return "NON RICONOSCIUTA" }
@@ -373,7 +373,7 @@ struct OCRRisultatoView: View {
 
                 HStack(spacing: 12) {
                     Button("CHIUDI") {
-                        chiudi()
+                        presentationMode.wrappedValue.dismiss()
                     }
                     .buttonStyle(.bordered)
                     .frame(maxWidth: .infinity)
@@ -469,7 +469,6 @@ struct NuovaBollettaView: View {
     @State private var messaggioScanner = ""
     @State private var mostraRisultatoScanner = false
     @State private var risultatoOCR: BollettaOCRResult?
-    @State private var mostraMascheraDopoOCR = false
 
     init(archivio: Archivio, bollettaDaModificare: Bolletta? = nil) {
         self.archivio = archivio
@@ -525,14 +524,10 @@ struct NuovaBollettaView: View {
     var body: some View {
         NavigationView {
             Group {
-                // Per una nuova bolletta non mostriamo la vecchia maschera prima
-                // della fotocamera: resta nascosta fino a quando l'utente applica
-                // i dati OCR.
-                if bollettaDaModificare != nil || mostraMascheraDopoOCR {
-                    mascheraBolletta
-                } else {
-                    Color.clear.ignoresSafeArea()
-                }
+                // Per una nuova bolletta si entra direttamente nella maschera e
+                // la fotocamera viene aperta automaticamente. La data viene
+                // ricavata dalla foto tramite OCR.
+                mascheraBolletta
             }
             .navigationTitle(dataConfermata ? "Elenco lavori" : (bollettaDaModificare == nil ? "Nuova bolletta" : "Modifica bolletta"))
             .navigationBarTitleDisplayMode(.inline)
@@ -587,21 +582,12 @@ struct NuovaBollettaView: View {
                 risultatoOCR = result
             }
         }
-        .fullScreenCover(isPresented: $mostraRisultatoScanner) {
+        .sheet(isPresented: $mostraRisultatoScanner) {
             if let risultatoOCR {
-                OCRRisultatoView(
-                    result: risultatoOCR,
-                    applica: {
-                        applicaScansione(risultatoOCR)
-                        mostraRisultatoScanner = false
-                        mostraMascheraDopoOCR = true
-                    },
-                    chiudi: {
-                        mostraRisultatoScanner = false
-                        risultatoOCR = nil
-                        presentationMode.wrappedValue.dismiss()
-                    }
-                )
+                OCRRisultatoView(result: risultatoOCR) {
+                    applicaScansione(risultatoOCR)
+                    mostraRisultatoScanner = false
+                }
             }
         }
         .sheet(isPresented: $mostraAggiungiArticolo) {
@@ -827,6 +813,7 @@ struct NuovaBollettaView: View {
         messaggioScanner = result.date != nil
             ? "Foto letta. Data riconosciuta e \(aggiornati) quantità compilate. Controlla i valori prima di salvare."
             : "Foto letta. \(aggiornati) quantità compilate. Controlla i valori prima di salvare."
+        mostraRisultatoScanner = true
     }
 
     private func salva() {
