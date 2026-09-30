@@ -48,12 +48,15 @@ struct BollettaScannerView: UIViewControllerRepresentable {
                 return
             }
 
-            let request = VNRecognizeTextRequest { [weak self] request, _ in
+            let articleNames = self.articleNames
+            let completion = self.completion
+            let dismiss = self.dismiss
+            let request = VNRecognizeTextRequest { request, _ in
                 let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
-                let result = Self.parse(observations, articleNames: self?.articleNames ?? [])
+                let result = Self.parse(observations, articleNames: articleNames)
                 DispatchQueue.main.async {
-                    self?.completion(result)
-                    self?.dismiss()
+                    completion(result)
+                    dismiss()
                 }
             }
             request.recognitionLevel = .accurate
@@ -66,8 +69,8 @@ struct BollettaScannerView: UIViewControllerRepresentable {
                     try handler.perform([request])
                 } catch {
                     DispatchQueue.main.async {
-                        self?.completion(BollettaOCRResult(date: nil, quantities: [:]))
-                        self?.dismiss()
+                        completion(BollettaOCRResult(date: nil, quantities: [:]))
+                        dismiss()
                     }
                 }
             }

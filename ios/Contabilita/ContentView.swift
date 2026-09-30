@@ -170,7 +170,7 @@ struct ContentView: View {
                 DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore)
             }
             .sheet(isPresented: $mostraArchivioAnalisi) {
-                ArchivioAnalisiView(analysisStore: analysisStore)
+                ArchivioAnalisiView(analysisStore: analysisStore, archivio: archivio)
             }
             .sheet(isPresented: $mostraPDF) {
                 PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore, archivio: archivio)
