@@ -565,12 +565,21 @@ struct NuovaBollettaView: View {
         } message: {
             Text("Vuoi cancellare definitivamente questa bolletta?")
         }
-        .sheet(isPresented: $mostraFotocamera) {
+        .sheet(isPresented: $mostraFotocamera, onDismiss: {
+            // La fotocamera deve essere completamente chiusa prima di aprire
+            // la schermata del risultato OCR. Aprire due sheet nello stesso
+            // istante lasciava la vecchia schermata sotto e poteva bloccare la UI.
+            guard risultatoOCR != nil else { return }
+            DispatchQueue.main.async {
+                mostraRisultatoScanner = true
+            }
+        }) {
             BollettaScannerView(articleNames: gruppi.flatMap { g in
                 g.voci.map { $0.nome.isEmpty ? g.nome : "\(g.nome) \($0.nome)" }
             }) { result in
+                // Salviamo soltanto il risultato. La schermata OCR viene
+                // aperta nell'onDismiss, quando la fotocamera è già chiusa.
                 risultatoOCR = result
-                mostraRisultatoScanner = true
             }
         }
         .sheet(isPresented: $mostraRisultatoScanner) {
