@@ -1045,7 +1045,7 @@ struct DatiAnalizzatiView: View {
                                         let a = totale.azienda[articolo] ?? 0
                                         if n != a {
                                             HStack {
-                                                Text(artigo)
+                                                Text(articolo)
                                                 Spacer()
                                                 Text("\(n) / \(a)")
                                                     .fontWeight(.bold)
