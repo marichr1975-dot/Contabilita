@@ -39,7 +39,7 @@ struct ContabilitaRootView: View {
             }
         }
         .sheet(isPresented: $nuovaBolletta) {
-            NuovaBollettaFotograficaView(archivio: archivio)
+            NuovaBollettaView(archivio: archivio)
                 .navigationViewStyle(.stack)
         }
         .sheet(isPresented: $modificaBolletta) {
@@ -47,11 +47,11 @@ struct ContabilitaRootView: View {
                 .navigationViewStyle(.stack)
         }
         .sheet(isPresented: $mostraDatiAnalizzati) {
-            AnalisiAIView(archivio: archivio, analysisStore: analysisStore)
+            DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore)
                 .navigationViewStyle(.stack)
         }
         .sheet(isPresented: $mostraPDF) {
-            PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore)
+            PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore, archivio: archivio)
                 .navigationViewStyle(.stack)
         }
         .onAppear {
@@ -80,13 +80,13 @@ struct ContabilitaRootView: View {
                         ],
                         spacing: 22
                     ) {
-                        dashboardButton("NUOVA BOLLETTA", icon: "camera.fill", tint: .green) {
+                        dashboardButton("NUOVA BOLLETTA", icon: "plus.circle.fill", tint: .green) {
                             nuovaBolletta = true
                         }
                         dashboardButton("MODIFICA BOLLETTA", icon: "pencil.circle.fill", tint: .blue) {
                             modificaBolletta = true
                         }
-                        dashboardButton("ANALISI AI", icon: "sparkles", tint: .purple) {
+                        dashboardButton("DATI ANALIZZATI", icon: "chart.bar.fill", tint: .purple) {
                             mostraDatiAnalizzati = true
                         }
                         dashboardButton(
@@ -111,13 +111,13 @@ struct ContabilitaRootView: View {
         ScrollView {
             VStack(spacing: 16) {
                 header
-                dashboardButton("NUOVA BOLLETTA", icon: "camera.fill", tint: .green) {
+                dashboardButton("NUOVA BOLLETTA", icon: "plus.circle.fill", tint: .green) {
                     nuovaBolletta = true
                 }
                 dashboardButton("MODIFICA BOLLETTA", icon: "pencil.circle.fill", tint: .blue) {
                     modificaBolletta = true
                 }
-                dashboardButton("ANALISI AI", icon: "sparkles", tint: .purple) {
+                dashboardButton("DATI ANALIZZATI", icon: "chart.bar.fill", tint: .purple) {
                     mostraDatiAnalizzati = true
                 }
                 dashboardButton(

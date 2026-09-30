@@ -1,7 +1,5 @@
 import SwiftUI
 import PDFKit
-import Vision
-import UIKit
 
 extension URL: Identifiable {
     public var id: String { absoluteString }
@@ -22,29 +20,12 @@ struct Lavorazione: Identifiable, Codable {
 struct Bolletta: Identifiable, Codable {
     let id: UUID
     var data: Date
-    var numero: String
     var lavorazioni: [Lavorazione]
-    var fotoNome: String?
 
-    init(id: UUID = UUID(), data: Date, numero: String = "", lavorazioni: [Lavorazione], fotoNome: String? = nil) {
+    init(id: UUID = UUID(), data: Date, lavorazioni: [Lavorazione]) {
         self.id = id
         self.data = data
-        self.numero = numero
         self.lavorazioni = lavorazioni
-        self.fotoNome = fotoNome
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id, data, numero, lavorazioni, fotoNome
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(UUID.self, forKey: .id)
-        data = try c.decode(Date.self, forKey: .data)
-        numero = try c.decodeIfPresent(String.self, forKey: .numero) ?? ""
-        lavorazioni = try c.decodeIfPresent([Lavorazione].self, forKey: .lavorazioni) ?? []
-        fotoNome = try c.decodeIfPresent(String.self, forKey: .fotoNome)
     }
 }
 
@@ -192,11 +173,7 @@ struct ContentView: View {
                 ArchivioAnalisiView(analysisStore: analysisStore)
             }
             .sheet(isPresented: $mostraPDF) {
-                PDFImportatiView(
-                    store: pdfTransfer,
-                    analysisStore: analysisStore,
-                    archivio: archivio
-                )
+                PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore, archivio: archivio)
             }
             .onAppear { aggiornaPDF() }
             .onChange(of: scenePhase) { phase in
@@ -399,6 +376,9 @@ struct NuovaBollettaView: View {
     @State private var mostraConfermaCancella = false
     @State private var nuovoArticolo = ""
     @State private var mostraAggiungiArticolo = false
+    @State private var mostraFotocamera = false
+    @State private var messaggioScanner = ""
+    @State private var mostraRisultatoScanner = false
 
     init(archivio: Archivio, bollettaDaModificare: Bolletta? = nil) {
         self.archivio = archivio
@@ -469,6 +449,9 @@ struct NuovaBollettaView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if dataConfermata {
                         HStack(spacing: 14) {
+                            Button { mostraFotocamera = true } label: {
+                                Image(systemName: "camera.fill")
+                            }
                             if bollettaDaModificare != nil {
                                 Button("CANCELLA") {
                                     mostraConfermaCancella = true
@@ -492,6 +475,18 @@ struct NuovaBollettaView: View {
             Button("Annulla", role: .cancel) { }
         } message: {
             Text("Vuoi cancellare definitivamente questa bolletta?")
+        }
+        .sheet(isPresented: $mostraFotocamera) {
+            BollettaScannerView(articleNames: gruppi.flatMap { g in
+                g.voci.map { $0.nome.isEmpty ? g.nome : "\(g.nome) \($0.nome)" }
+            }) { result in
+                applicaScansione(result)
+            }
+        }
+        .alert("Lettura foto", isPresented: $mostraRisultatoScanner) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(messaggioScanner)
         }
         .sheet(isPresented: $mostraAggiungiArticolo) {
             NavigationView {
@@ -526,6 +521,17 @@ struct NuovaBollettaView: View {
 
     private var scegliData: some View {
         VStack(spacing: 16) {
+            Button {
+                mostraFotocamera = true
+            } label: {
+                Label("FOTOGRAFA BOLLETTA", systemImage: "camera.fill")
+                    .font(.title3.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+
             DataMeseSelector(data: $data)
             Button {
                 dataConfermata = true
@@ -672,6 +678,30 @@ struct NuovaBollettaView: View {
         gruppi.append(GruppoLavorazione(nome: nome, voci: [VoceLavorazione(nome: "")]))
         nuovoArticolo = ""
         mostraAggiungiArticolo = false
+    }
+
+    private func applicaScansione(_ result: BollettaOCRResult) {
+        if let scannedDate = result.date {
+            data = scannedDate
+            dataConfermata = true
+        }
+
+        var aggiornati = 0
+        for g in gruppi.indices {
+            for v in gruppi[g].voci.indices {
+                let nome = gruppi[g].voci[v].nome.isEmpty
+                    ? gruppi[g].nome
+                    : "\(gruppi[g].nome) \(gruppi[g].voci[v].nome)"
+                if let q = result.quantities[nome] {
+                    gruppi[g].voci[v].quantita = String(q)
+                    aggiornati += 1
+                }
+            }
+        }
+        messaggioScanner = result.date != nil
+            ? "Foto letta. Data riconosciuta e \(aggiornati) quantità compilate. Controlla i valori prima di salvare."
+            : "Foto letta. \(aggiornati) quantità compilate. Controlla i valori prima di salvare."
+        mostraRisultatoScanner = true
     }
 
     private func salva() {
@@ -1015,7 +1045,7 @@ struct DatiAnalizzatiView: View {
                                         let a = totale.azienda[articolo] ?? 0
                                         if n != a {
                                             HStack {
-                                                Text(articolo)
+                                                Text(artigo)
                                                 Spacer()
                                                 Text("\(n) / \(a)")
                                                     .fontWeight(.bold)
@@ -1102,6 +1132,7 @@ struct DatiAnalizzatiView: View {
 
 struct ArchivioAnalisiView: View {
     @ObservedObject var analysisStore: PDFAnalysisStore
+    @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
 
     private var gruppiAnno: [(anno: Int, analisi: [PDFAnalysisResult])] {
@@ -1291,559 +1322,3 @@ struct ConfrontoBollettaView: View {
     }
 }
 
-
-
-// MARK: - NUOVA BOLLETTA DA FOTO
-
-struct NuovaBollettaFotograficaView: View {
-    @ObservedObject var archivio: Archivio
-    @Environment(\.presentationMode) private var presentationMode
-    @State private var mostraFotocamera = false
-    @State private var immagine: UIImage?
-    @State private var data = Date()
-    @State private var numero = ""
-    @State private var lavorazioni: [Lavorazione] = []
-    @State private var testoOCR = ""
-    @State private var errore = ""
-    @State private var mostraErrore = false
-
-    var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 16) {
-                    if let image = immagine {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxHeight: 260)
-                            .cornerRadius(14)
-                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.gray.opacity(0.25)))
-                    } else {
-                        Image(systemName: "camera.viewfinder")
-                            .font(.system(size: 64))
-                            .foregroundColor(.green)
-                        Text("Fotografa la bolletta")
-                            .font(.title2.weight(.semibold))
-                        Text("La foto viene conservata insieme alla bolletta. Leggo automaticamente data, numero e quantità; prima del salvataggio puoi correggere tutto.")
-                            .multilineTextAlignment(.center)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Button {
-                        mostraFotocamera = true
-                    } label: {
-                        Label(immagine == nil ? "FOTOGRAFA BOLLETTA" : "RIFAI FOTO", systemImage: "camera.fill")
-                            .font(.title3.weight(.bold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 15)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-
-                    if immagine != nil {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("DATI LETTI DALLA FOTO").font(.headline)
-                            DatePicker("Data", selection: $data, displayedComponents: .date)
-                            HStack {
-                                Text("Numero")
-                                TextField("Numero bolletta", text: $numero)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-
-                            Text("PEZZI").font(.headline).padding(.top, 4)
-
-                            ForEach(lavorazioni.indices, id: \.self) { i in
-                                HStack {
-                                    Text(lavorazioni[i].nome)
-                                        .lineLimit(2)
-                                    Spacer()
-                                    TextField("0", text: $lavorazioni[i].quantita)
-                                        .keyboardType(.numberPad)
-                                        .multilineTextAlignment(.trailing)
-                                        .textFieldStyle(.roundedBorder)
-                                        .frame(width: 90)
-                                }
-                                .padding(.vertical, 3)
-                            }
-
-                            Button {
-                                salva()
-                            } label: {
-                                Text("SALVA BOLLETTA")
-                                    .font(.title3.weight(.bold))
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 15)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.blue)
-                        }
-                        .padding(16)
-                        .background(Color.gray.opacity(0.08))
-                        .cornerRadius(16)
-                    }
-                }
-                .padding(20)
-            }
-            .navigationTitle("Nuova bolletta")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Annulla") { presentationMode.wrappedValue.dismiss() }
-                }
-            }
-        }
-        .sheet(isPresented: $mostraFotocamera) {
-            CameraPicker { image in
-                mostraFotocamera = false
-                immagine = image
-                analizzaFoto(image)
-            }
-        }
-        .alert("Attenzione", isPresented: $mostraErrore) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(errore)
-        }
-    }
-
-    private func analizzaFoto(_ image: UIImage) {
-        OCRBollettaAnalyzer.analyze(image: image, articoli: archivio.nomiLavorazioni) { result in
-            DispatchQueue.main.async {
-                data = result.date ?? Date()
-                numero = result.numero
-                testoOCR = result.rawText
-                let standard = archivio.nomiLavorazioni
-                var righe = standard.map { Lavorazione(nome: $0) }
-                for detected in result.items {
-                    if let idx = righe.firstIndex(where: { OCRBollettaAnalyzer.normalizza($0.nome) == OCRBollettaAnalyzer.normalizza(detected.name) }) {
-                        righe[idx].quantita = String(detected.quantity)
-                    } else {
-                        righe.append(Lavorazione(nome: detected.name, quantita: String(detected.quantity)))
-                    }
-                }
-                lavorazioni = righe
-            }
-        }
-    }
-
-    private func salva() {
-        let valid = lavorazioni.filter {
-            (Int($0.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) > 0
-        }
-        guard !valid.isEmpty else {
-            errore = "Non ho trovato quantità da salvare. Controlla i dati letti dalla foto."
-            mostraErrore = true
-            return
-        }
-
-        let nomeFoto = UUID().uuidString + ".jpg"
-        if let image = immagine,
-           let dataFoto = image.jpegData(compressionQuality: 0.88) {
-            let folder = FotoBollettaStore.folder
-            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try? dataFoto.write(to: folder.appendingPathComponent(nomeFoto), options: .atomic)
-        }
-
-        archivio.salvaBolletta(Bolletta(
-            data: data,
-            numero: numero.trimmingCharacters(in: .whitespacesAndNewlines),
-            lavorazioni: valid,
-            fotoNome: nomeFoto
-        ))
-        presentationMode.wrappedValue.dismiss()
-    }
-}
-
-struct CameraPicker: UIViewControllerRepresentable {
-    let completion: (UIImage) -> Void
-
-    func makeCoordinator() -> Coordinator { Coordinator(completion: completion) }
-
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
-        picker.cameraCaptureMode = .photo
-        picker.allowsEditing = false
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
-
-    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
-        let completion: (UIImage) -> Void
-        init(completion: @escaping (UIImage) -> Void) { self.completion = completion }
-
-        func imagePickerController(_ picker: UIImagePickerController,
-                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-            if let image = info[.originalImage] as? UIImage {
-                completion(image)
-            }
-            picker.dismiss(animated: true)
-        }
-
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            picker.dismiss(animated: true)
-        }
-    }
-}
-
-enum FotoBollettaStore {
-    static var folder: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("FotoBollette", isDirectory: true)
-    }
-}
-
-struct OCRDetectedItem {
-    let name: String
-    let quantity: Int
-}
-
-struct OCRBollettaResult {
-    var date: Date?
-    var numero: String
-    var items: [OCRDetectedItem]
-    var rawText: String
-}
-
-enum OCRBollettaAnalyzer {
-    static func analyze(image: UIImage, articoli: [String], completion: @escaping (OCRBollettaResult) -> Void) {
-        guard let cgImage = image.cgImage else {
-            completion(OCRBollettaResult(date: nil, numero: "", items: [], rawText: ""))
-            return
-        }
-
-        let request = VNRecognizeTextRequest { request, _ in
-            let observations = request.results as? [VNRecognizedTextObservation] ?? []
-            let lines = observations.compactMap { $0.topCandidates(1).first?.string }
-            let raw = lines.joined(separator: "\n")
-
-            var foundDate: Date?
-            let dateRegex = try? NSRegularExpression(pattern: #"(?<!\d)(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?!\d)"#)
-            if let regex = dateRegex,
-               let m = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)) {
-                let s = (raw as NSString).substring(with: m.range)
-                foundDate = parseDate(s)
-            }
-
-            var numero = ""
-            let numberPatterns = [
-                #"(?i)(?:n\.?|numero|bolletta)\s*[:#-]?\s*([A-Z0-9/-]{2,})"#
-            ]
-            for pattern in numberPatterns {
-                if let regex = try? NSRegularExpression(pattern: pattern),
-                   let m = regex.firstMatch(in: raw, range: NSRange(raw.startIndex..., in: raw)),
-                   m.numberOfRanges > 1 {
-                    numero = (raw as NSString).substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
-                    break
-                }
-            }
-
-            var items: [OCRDetectedItem] = []
-            for line in lines {
-                let normalizedLine = normalizza(line)
-                for article in articoli {
-                    let normalizedArticle = normalizza(article)
-                    guard normalizedLine.contains(normalizedArticle) else { continue }
-                    let ints = integers(in: line)
-                    if let q = ints.last, q > 0, q < 10000 {
-                        items.append(OCRDetectedItem(name: article, quantity: q))
-                    }
-                }
-            }
-
-            // Se lo stesso articolo viene letto su più righe, somma le quantità.
-            var aggregate: [String: Int] = [:]
-            var display: [String: String] = [:]
-            for item in items {
-                let key = normalizza(item.name)
-                aggregate[key, default: 0] += item.quantity
-                display[key] = item.name
-            }
-            let resultItems = aggregate.map { OCRDetectedItem(name: display[$0.key] ?? $0.key, quantity: $0.value) }
-
-            completion(OCRBollettaResult(date: foundDate, numero: numero, items: resultItems, rawText: raw))
-        }
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = true
-        request.recognitionLanguages = ["it-IT", "en-US"]
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
-            try? handler.perform([request])
-        }
-    }
-
-    static func integers(in text: String) -> [Int] {
-        let regex = try? NSRegularExpression(pattern: #"(?<![\d])\d{1,5}(?![\d])"#)
-        return regex?.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
-            Int((text as NSString).substring(with: $0.range))
-        } ?? []
-    }
-
-    static func normalizza(_ text: String) -> String {
-        text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "-", with: "")
-            .replacingOccurrences(of: "_", with: "")
-            .replacingOccurrences(of: ".", with: "")
-            .replacingOccurrences(of: "/", with: "")
-    }
-
-    static func parseDate(_ s: String) -> Date? {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "it_IT")
-        for format in ["dd/MM/yyyy", "dd-MM-yyyy", "dd.MM.yyyy", "d/M/yyyy", "d-M-yyyy", "d.M.yyyy"] {
-            f.dateFormat = format
-            if let d = f.date(from: s) { return d }
-        }
-        return nil
-    }
-}
-
-// MARK: - ANALISI AI LOCALE
-
-struct AnalisiAIMessaggio: Identifiable {
-    let id = UUID()
-    let testo: String
-    let tipo: Tipo
-    enum Tipo { case normale, ok, warning, errore }
-}
-
-struct AnalisiAIView: View {
-    @ObservedObject var archivio: Archivio
-    @ObservedObject var analysisStore: PDFAnalysisStore
-    @Environment(\.presentationMode) private var presentationMode
-    @State private var messaggi: [AnalisiAIMessaggio] = []
-    @State private var eseguita = false
-
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                HStack {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(.purple)
-                    VStack(alignment: .leading) {
-                        Text("Analisi AI").font(.title2.weight(.bold))
-                        Text("Confronto intelligente delle bollette").font(.caption).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                }
-                .padding()
-
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        if !eseguita {
-                            Text("Premi ANALIZZA per confrontare tutte le bollette fotografate con il file aziendale. Controllo anche date fuori sequenza, bollette spostate e quantità accorpate nelle date successive.")
-                                .padding(14)
-                                .background(Color.gray.opacity(0.10))
-                                .cornerRadius(14)
-                        }
-                        ForEach(messaggi) { msg in
-                            HStack(alignment: .top, spacing: 9) {
-                                Image(systemName: msg.tipo == .ok ? "checkmark.circle.fill" :
-                                      msg.tipo == .errore ? "xmark.circle.fill" :
-                                      msg.tipo == .warning ? "exclamationmark.triangle.fill" : "sparkles")
-                                    .foregroundColor(msg.tipo == .ok ? .green :
-                                                     msg.tipo == .errore ? .red :
-                                                     msg.tipo == .warning ? .orange : .purple)
-                                Text(msg.testo)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .padding(13)
-                            .background(Color.gray.opacity(0.08))
-                            .cornerRadius(14)
-                        }
-                    }
-                    .padding()
-                }
-
-                Button {
-                    eseguiAnalisi()
-                } label: {
-                    Label("ANALIZZA", systemImage: "sparkles")
-                        .font(.title3.weight(.bold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.purple)
-                .padding(.horizontal)
-                .padding(.bottom, 12)
-            }
-            .navigationTitle("Analisi")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
-                }
-            }
-            .onAppear {
-                if !eseguita { eseguiAnalisi() }
-            }
-        }
-        .navigationViewStyle(.stack)
-    }
-
-    private func eseguiAnalisi() {
-        var out: [AnalisiAIMessaggio] = []
-        let nostre = archivio.bollette.sorted { $0.data < $1.data }
-        let azienda = analysisStore.giorniAzienda().sorted { $0.date < $1.date }
-
-        guard !nostre.isEmpty else {
-            out.append(AnalisiAIMessaggio(testo: "Non ci sono bollette fotografate da analizzare.", tipo: .warning))
-            messaggi = out; eseguita = true; return
-        }
-        guard !azienda.isEmpty else {
-            out.append(AnalisiAIMessaggio(testo: "Non c'è ancora un file aziendale caricato/analizzato. Carica il file da FILE AZIENDA e poi torna qui.", tipo: .warning))
-            messaggi = out; eseguita = true; return
-        }
-
-        out.append(AnalisiAIMessaggio(
-            testo: "Ho controllato \(nostre.count) bollette nostre e \(azienda.count) registrazioni aziendali. Non considero automaticamente una data diversa come pezzi mancanti: cerco anche nelle date successive.",
-            tipo: .normale
-        ))
-
-        let nostreTot = aggregaNostre(nostre)
-        let aziendaTot = aggregaAzienda(azienda)
-
-        // 1. Controllo totale per articolo.
-        var differenzeTotali = 0
-        for key in Set(nostreTot.keys).union(aziendaTot.keys).sorted() {
-            let n = nostreTot[key] ?? 0
-            let a = aziendaTot[key] ?? 0
-            if n != a {
-                differenzeTotali += 1
-                let delta = n - a
-                out.append(AnalisiAIMessaggio(
-                    testo: "\(nomeArticolo(key, nostre: nostre, azienda: azienda)): nostre \(n), azienda \(a) → differenza \(delta > 0 ? "+" : "")\(delta) pezzi.",
-                    tipo: .errore
-                ))
-            }
-        }
-
-        // 2. Per ogni nostra bolletta, verifica stessa data; se assente,
-        // cerca una copertura nelle registrazioni aziendali successive.
-        for b in nostre {
-            let bDay = giorno(b.data)
-            let same = azienda.filter { giorno($0.date) == bDay }
-            let next = azienda.filter { $0.date > bDay }
-
-            if same.isEmpty {
-                let covered = coperturaBolletta(b, in: next)
-                if covered.full {
-                    out.append(AnalisiAIMessaggio(
-                        testo: "La bolletta \(numeroDescrittivo(b)) del \(dataTesto(b.data)) non risulta nella stessa data aziendale, ma i suoi pezzi risultano contabilizzati nelle registrazioni successive (\(covered.dateText)). Quindi NON considero quei pezzi mancanti: segnalo solo uno spostamento/accorpamento della registrazione.",
-                        tipo: .warning
-                    ))
-                } else if covered.partial {
-                    out.append(AnalisiAIMessaggio(
-                        testo: "La bolletta \(numeroDescrittivo(b)) del \(dataTesto(b.data)) non risulta nella stessa data aziendale. Ho trovato solo una copertura parziale nelle date successive (\(covered.dateText)). Restano \(covered.remaining) pezzi da spiegare.",
-                        tipo: .errore
-                    ))
-                } else {
-                    out.append(AnalisiAIMessaggio(
-                        testo: "La bolletta \(numeroDescrittivo(b)) del \(dataTesto(b.data)) non risulta nel file aziendale e non ho trovato nelle date successive quantità sufficienti per ricondurla a un accorpamento.",
-                        tipo: .errore
-                    ))
-                }
-            }
-        }
-
-        if differenzeTotali == 0 {
-            out.append(AnalisiAIMessaggio(
-                testo: "A livello complessivo le quantità per articolo coincidono. Le eventuali differenze di data sopra indicate non vengono trattate come pezzi mancanti quando le quantità risultano contabilizzate successivamente.",
-                tipo: .ok
-            ))
-            let euro = analysisStore.totaleAzienda()
-            if euro > 0 {
-                out.append(AnalisiAIMessaggio(
-                    testo: "TOTALE MATURATO / FATTURABILE: \(euro.formatted(.currency(code: "EUR")))",
-                    tipo: .ok
-                ))
-            }
-        } else {
-            out.append(AnalisiAIMessaggio(
-                testo: "Ho separato le incongruenze di data/documento dalle differenze reali di quantità. Le quantità che risultano recuperate in date successive non vengono conteggiate due volte.",
-                tipo: .normale
-            ))
-        }
-
-        messaggi = out
-        eseguita = true
-    }
-
-    private func giorno(_ d: Date) -> Date { Calendar.current.startOfDay(for: d) }
-
-    private func dataTesto(_ d: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "dd/MM/yyyy"; return f.string(from: d)
-    }
-
-    private func numeroDescrittivo(_ b: Bolletta) -> String {
-        b.numero.isEmpty ? "senza numero" : "n. \(b.numero)"
-    }
-
-    private func normalizza(_ s: String) -> String { OCRBollettaAnalyzer.normalizza(s) }
-
-    private func aggregaNostre(_ bollette: [Bolletta]) -> [String:Int] {
-        var r:[String:Int] = [:]
-        for b in bollette {
-            for l in b.lavorazioni {
-                let q = Int(l.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                if q > 0 { r[normalizza(l.nome), default: 0] += q }
-            }
-        }
-        return r
-    }
-
-    private func aggregaAzienda(_ giorni: [PDFAnalysisDay]) -> [String:Int] {
-        var r:[String:Int] = [:]
-        for d in giorni {
-            for row in d.rows where row.quantity > 0 {
-                r[normalizza(row.article), default: 0] += row.quantity
-            }
-        }
-        return r
-    }
-
-    private func nomeArticolo(_ key:String, nostre:[Bolletta], azienda:[PDFAnalysisDay]) -> String {
-        for b in nostre { if let l=b.lavorazioni.first(where:{normalizza($0.nome)==key}) { return l.nome } }
-        for d in azienda { if let r=d.rows.first(where:{normalizza($0.article)==key}) { return r.article } }
-        return key
-    }
-
-    private func coperturaBolletta(_ b: Bolletta, in giorni: [PDFAnalysisDay]) -> (full:Bool, partial:Bool, remaining:Int, dateText:String) {
-        var richieste:[String:Int] = [:]
-        for l in b.lavorazioni {
-            let q = Int(l.quantita.trimmingCharacters(in:.whitespacesAndNewlines)) ?? 0
-            if q > 0 { richieste[normalizza(l.nome), default:0] += q }
-        }
-        var residui = richieste
-        var dateCoinvolte:[String] = []
-
-        // Cerca in avanti. Ogni articolo viene coperto dalle quantità disponibili
-        // senza richiedere che tutta la bolletta sia nello stesso giorno.
-        for day in giorni {
-            var usato = false
-            for row in day.rows {
-                let key = normalizza(row.article)
-                guard let need = residui[key], need > 0 else { continue }
-                let take = min(need, row.quantity)
-                if take > 0 {
-                    residui[key] = need - take
-                    usato = true
-                }
-            }
-            if usato {
-                dateCoinvolte.append(dataTesto(day.date))
-            }
-            if residui.values.allSatisfy({ $0 <= 0 }) { break }
-        }
-
-        let remaining = residui.values.filter { $0 > 0 }.reduce(0,+)
-        return (remaining == 0, remaining > 0 && remaining < richieste.values.reduce(0,+),
-                remaining, dateCoinvolte.joined(separator: ", "))
-    }
-}
