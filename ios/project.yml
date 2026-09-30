@@ -1,0 +1,74 @@
+name: Contabilita
+options:
+  projectFormat: xcode15_0
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: 0.9.19
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+targets:
+  Contabilita:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - Contabilita
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gotrail.contabilita
+        PRODUCT_NAME: Contabilita
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_CFBundleDisplayName: Contabilità
+        INFOPLIST_KEY_LSRequiresIPhoneOS: true
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_ENTITLEMENTS: Contabilita/Contabilita.entitlements
+        SWIFT_VERSION: "5.0"
+    dependencies:
+      - target: ContabilitaShare
+        embed: true
+      - package: ZIPFoundation
+    info:
+      path: Contabilita/Info.plist
+      properties:
+        CFBundleDisplayName: Contabilità
+        CFBundleShortVersionString: "1.5"
+        CFBundleVersion: "15"
+        UILaunchScreen: {}
+        CFBundleURLTypes:
+          - CFBundleURLName: com.gotrail.contabilita.import
+            CFBundleURLSchemes:
+              - contabilita
+
+  ContabilitaShare:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - ContabilitaShare
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gotrail.contabilita.share
+        PRODUCT_NAME: ContabilitaShare
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_ENTITLEMENTS: ContabilitaShare/ContabilitaShare.entitlements
+        SWIFT_VERSION: "5.0"
+    info:
+      path: ContabilitaShare/Info.plist
+      properties:
+        CFBundleDisplayName: Contabilità
+        CFBundlePackageType: XPC!
+        CFBundleShortVersionString: "1.5"
+        CFBundleVersion: "15"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule: SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.data").@count > 0).@count > 0

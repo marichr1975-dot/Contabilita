@@ -1,0 +1,49 @@
+name: Crea app iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/crea-ipa.yml"
+
+jobs:
+  build-ios:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Installa XcodeGen
+        run: brew install xcodegen
+
+      - name: Seleziona Xcode 15.4 e genera progetto
+        working-directory: ios
+        run: |
+          set -e
+          sudo xcode-select -s /Applications/Xcode_15.4.app
+          xcodebuild -version
+          rm -rf Contabilita.xcodeproj
+          xcodegen generate
+          xcodebuild -list -project Contabilita.xcodeproj
+
+      - name: Compila
+        run: |
+          set -e
+          xcodebuild             -project ios/Contabilita.xcodeproj             -scheme Contabilita             -configuration Release             -sdk iphoneos             -derivedDataPath build             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             build
+
+      - name: Crea IPA
+        run: |
+          set -e
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" -type d | head -n 1)
+          test -n "$APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload Contabilita-unsigned.ipa
+          rm -rf Payload
+
+      - name: Carica IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Contabilita-V1.5-IPA
+          path: Contabilita-unsigned.ipa
