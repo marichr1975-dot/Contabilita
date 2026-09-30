@@ -304,6 +304,95 @@ struct PDFImportatiView: View {
 }
 
 
+struct OCRRisultatoView: View {
+    let result: BollettaOCRResult
+    let applica: () -> Void
+    @Environment(\.presentationMode) private var presentationMode
+
+    private var dataTesto: String {
+        guard let date = result.date else { return "NON RICONOSCIUTA" }
+        let f = DateFormatter()
+        f.dateFormat = "dd/MM/yyyy"
+        f.locale = Locale(identifier: "it_IT")
+        return f.string(from: date)
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("DATI RACCOLTI DALLA FOTOCAMERA")
+                    .font(.title3.weight(.bold))
+
+                HStack {
+                    Text("DATA")
+                        .fontWeight(.semibold)
+                    Spacer()
+                    Text(dataTesto)
+                        .foregroundColor(result.date == nil ? .red : .green)
+                }
+                .padding(10)
+                .background(Color.gray.opacity(0.10))
+                .cornerRadius(10)
+
+                Text("QUANTITÀ RICONOSCIUTE")
+                    .font(.headline)
+                    .padding(.top, 4)
+
+                if result.quantities.isEmpty {
+                    Text("Nessuna quantità riconosciuta.")
+                        .foregroundColor(.red)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(result.quantities.keys.sorted(), id: \.self) { nome in
+                                HStack {
+                                    Text(nome)
+                                    Spacer()
+                                    Text("\(result.quantities[nome] ?? 0)")
+                                        .fontWeight(.bold)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 150)
+                }
+
+                Text("TESTO OCR GREZZO")
+                    .font(.headline)
+                    .padding(.top, 4)
+
+                ScrollView {
+                    Text(result.rawText.isEmpty ? "Nessun testo riconosciuto." : result.rawText)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .padding(10)
+                }
+                .background(Color.gray.opacity(0.08))
+                .cornerRadius(10)
+
+                HStack(spacing: 12) {
+                    Button("CHIUDI") {
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+
+                    Button("APPLICA DATI") {
+                        applica()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(16)
+            .navigationTitle("Risultato OCR")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
 struct PDFViewer: View {
     let url: URL
     @Environment(\.presentationMode) private var presentationMode
@@ -379,6 +468,7 @@ struct NuovaBollettaView: View {
     @State private var mostraFotocamera = false
     @State private var messaggioScanner = ""
     @State private var mostraRisultatoScanner = false
+    @State private var risultatoOCR: BollettaOCRResult?
 
     init(archivio: Archivio, bollettaDaModificare: Bolletta? = nil) {
         self.archivio = archivio
@@ -434,11 +524,10 @@ struct NuovaBollettaView: View {
     var body: some View {
         NavigationView {
             Group {
-                if !dataConfermata {
-                    scegliData
-                } else {
-                    mascheraBolletta
-                }
+                // Per una nuova bolletta si entra direttamente nella maschera e
+                // la fotocamera viene aperta automaticamente. La data viene
+                // ricavata dalla foto tramite OCR.
+                mascheraBolletta
             }
             .navigationTitle(dataConfermata ? "Elenco lavori" : (bollettaDaModificare == nil ? "Nuova bolletta" : "Modifica bolletta"))
             .navigationBarTitleDisplayMode(.inline)
@@ -480,13 +569,17 @@ struct NuovaBollettaView: View {
             BollettaScannerView(articleNames: gruppi.flatMap { g in
                 g.voci.map { $0.nome.isEmpty ? g.nome : "\(g.nome) \($0.nome)" }
             }) { result in
-                applicaScansione(result)
+                risultatoOCR = result
+                mostraRisultatoScanner = true
             }
         }
-        .alert("Lettura foto", isPresented: $mostraRisultatoScanner) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(messaggioScanner)
+        .sheet(isPresented: $mostraRisultatoScanner) {
+            if let risultatoOCR {
+                OCRRisultatoView(result: risultatoOCR) {
+                    applicaScansione(risultatoOCR)
+                    mostraRisultatoScanner = false
+                }
+            }
         }
         .sheet(isPresented: $mostraAggiungiArticolo) {
             NavigationView {
@@ -515,6 +608,16 @@ struct NuovaBollettaView: View {
                 gruppi = gruppiBollettaDaNomi()
                 let standard = Set(gruppi.map { $0.nome.lowercased() })
                 gruppi.append(contentsOf: archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
+            }
+
+            // Nuova bolletta: nessuna richiesta di inserimento data.
+            // Dopo l'eventuale richiesta del permesso fotocamera, iOS apre
+            // direttamente la fotocamera. La data viene letta dalla foto.
+            if bollettaDaModificare == nil && !mostraFotocamera {
+                dataConfermata = true
+                DispatchQueue.main.async {
+                    mostraFotocamera = true
+                }
             }
         }
     }

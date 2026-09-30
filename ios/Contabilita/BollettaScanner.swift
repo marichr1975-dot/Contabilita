@@ -5,6 +5,7 @@ import Vision
 struct BollettaOCRResult {
     let date: Date?
     let quantities: [String: Int]
+    let rawText: String
 }
 
 struct BollettaScannerView: UIViewControllerRepresentable {
@@ -69,7 +70,7 @@ struct BollettaScannerView: UIViewControllerRepresentable {
                     try handler.perform([request])
                 } catch {
                     DispatchQueue.main.async {
-                        completion(BollettaOCRResult(date: nil, quantities: [:]))
+                        completion(BollettaOCRResult(date: nil, quantities: [:], rawText: "ERRORE: impossibile leggere la foto."))
                         dismiss()
                     }
                 }
@@ -89,7 +90,14 @@ struct BollettaScannerView: UIViewControllerRepresentable {
 
             let date = extractDate(from: lines.map(\.text))
             let quantities = extractQuantities(from: lines, names: articleNames)
-            return BollettaOCRResult(date: date, quantities: quantities)
+            let rawText = lines
+                .sorted {
+                    if abs($0.box.midY - $1.box.midY) > 0.02 { return $0.box.midY > $1.box.midY }
+                    return $0.box.minX < $1.box.minX
+                }
+                .map(\.text)
+                .joined(separator: "\n")
+            return BollettaOCRResult(date: date, quantities: quantities, rawText: rawText)
         }
 
         private static func extractDate(from texts: [String]) -> Date? {
