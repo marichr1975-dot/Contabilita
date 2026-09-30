@@ -192,7 +192,11 @@ struct ContentView: View {
                 ArchivioAnalisiView(analysisStore: analysisStore)
             }
             .sheet(isPresented: $mostraPDF) {
-                PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore)
+                PDFImportatiView(
+                    store: pdfTransfer,
+                    analysisStore: analysisStore,
+                    archivio: archivio
+                )
             }
             .onAppear { aggiornaPDF() }
             .onChange(of: scenePhase) { phase in
@@ -250,6 +254,7 @@ struct ContentView: View {
 struct PDFImportatiView: View {
     @ObservedObject var store: PDFTransferStore
     @ObservedObject var analysisStore: PDFAnalysisStore
+    @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
     @State private var pdfDaMostrare: URL?
     @State private var analisiInCorso: URL?
