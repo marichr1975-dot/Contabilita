@@ -632,6 +632,139 @@ struct NuovaBollettaView: View {
         }
     }
 
+    private var mascheraBolletta: some View {
+        VStack(spacing: 0) {
+            intestazioneFissa
+            Divider()
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 10) {
+                        ForEach(gruppi.indices, id: \.self) { g in
+                            gruppoView(g, proxy: proxy)
+                        }
+
+                        Button { mostraAggiungiArticolo = true } label: {
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                Text("AGGIUNGI ARTICOLO")
+                                    .fontWeight(.semibold)
+                            }
+                            .font(.title3)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .padding(12)
+                }
+            }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("OK") { prossimaRiga() }
+                    .font(.headline)
+            }
+        }
+    }
+
+    private var intestazioneFissa: some View {
+        VStack(spacing: 5) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading) {
+                    Text("NOME").font(.caption)
+                    Text("data").font(.headline)
+                }
+                Spacer()
+                VStack(spacing: 1) {
+                    Text("elenco").font(.headline)
+                    Text("lavori").font(.headline)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Color.black).foregroundColor(.white)
+                Text("bagful")
+                    .font(.system(size: 30, weight: .bold))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            HStack {
+                Text(data.formatted(date: .numeric, time: .omitted))
+                    .font(.title3)
+                    .foregroundColor(.blue)
+                Spacer()
+                Text("QUANTITÀ").font(.headline)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 9)
+        .background(Color(white: 0.97))
+    }
+
+    private func gruppoView(_ g: Int, proxy: ScrollViewProxy) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .bottom) {
+                Text(gruppi[g].nome).font(.headline)
+                Spacer()
+                Text("quantità").font(.headline)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+
+            ForEach(gruppi[g].voci.indices, id: \.self) { v in
+                let flat = indicePiatto(g, v)
+                HStack(spacing: 8) {
+                    Text("□").font(.title3).frame(width: 24)
+                    Text(gruppi[g].voci[v].nome)
+                        .font(.title3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    TextField("", text: binding(g: g, v: v))
+                        .font(.system(size: 22))
+                        .foregroundColor(.blue)
+                        .multilineTextAlignment(.center)
+                        .keyboardType(.numberPad)
+                        .frame(width: 90, height: 44)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .focused($rigaAttiva, equals: flat)
+                        .id(flat)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 3).stroke(Color.gray.opacity(0.65), lineWidth: 1))
+    }
+
+    private func binding(g: Int, v: Int) -> Binding<String> {
+        Binding(
+            get: { gruppi[g].voci[v].quantita },
+            set: { gruppi[g].voci[v].quantita = $0 }
+        )
+    }
+
+    private func indicePiatto(_ g: Int, _ v: Int) -> Int {
+        var n = 0
+        for i in 0..<g { n += gruppi[i].voci.count }
+        return n + v
+    }
+
+    private func prossimaRiga() {
+        if let r = rigaAttiva { rigaAttiva = r + 1 }
+        else { rigaAttiva = 1 }
+    }
+
+    private func aggiungiArticolo() {
+        let nome = nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nome.isEmpty else { return }
+        let esiste = gruppi.contains { $0.nome.caseInsensitiveCompare(nome) == .orderedSame }
+        guard !esiste else {
+            nuovoArticolo = ""
+            mostraAggiungiArticolo = false
+            return
+        }
+        archivio.aggiungiLavorazione(nome)
+        gruppi.append(GruppoLavorazione(nome: nome, voci: [VoceLavorazione(nome: "")]))
+        nuovoArticolo = ""
+        mostraAggiungiArticolo = false
+    }
+
     private func applicaScansione(_ result: BollettaOCRResult) {
         if let scannedDate = result.date {
             data = scannedDate
