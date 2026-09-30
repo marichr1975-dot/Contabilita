@@ -45,7 +45,7 @@ struct BollettaScannerView: UIViewControllerRepresentable {
             guard let image = info[.originalImage] as? UIImage, let cgImage = image.cgImage else { cancel(); return }
             let articleNames = self.articleNames
             let completion = self.completion
-            let dismiss = self.dismiss
+            let cancel = self.cancel
             let request = VNRecognizeTextRequest { request, _ in
                 let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
                 let result = Self.parse(observations, articleNames: articleNames)
@@ -64,7 +64,7 @@ struct BollettaScannerView: UIViewControllerRepresentable {
                 } catch {
                     DispatchQueue.main.async {
                         completion(BollettaOCRResult(date: nil, quantities: [:], rawText: "ERRORE: impossibile leggere la foto."))
-                        cancel()
+                        self.cancel()
                     }
                 }
             }
