@@ -588,11 +588,11 @@ struct NuovaBollettaView: View {
             }
         }
         .fullScreenCover(isPresented: $mostraRisultatoScanner) {
-            if let risultatoOCR {
+            if let ocrResult = risultatoOCR {
                 OCRRisultatoView(
-                    result: risultatoOCR,
+                    result: ocrResult,
                     applica: {
-                        applicaScansione(risultatoOCR)
+                        applicaScansione(ocrResult)
                         mostraRisultatoScanner = false
                         mostraMascheraDopoOCR = true
                     },
