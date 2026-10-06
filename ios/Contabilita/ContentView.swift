@@ -908,7 +908,7 @@ struct DatiAnalizzatiView: View {
             for l in b.lavorazioni {
                 let n = quickName(l.nome)
                 let q = Int(l.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                if !n.isEmpty && q != 0 { out[n, default: 0] += q }
+                if !n.isEmpty && q > 0 { out[n, default: 0] += q }
             }
         }
         return out
@@ -921,14 +921,18 @@ struct DatiAnalizzatiView: View {
         for d in analysisStore.giorniAzienda() where cal.isDate(d.date, inSameDayAs: date) {
             for r in d.rows {
                 let n = quickName(r.article)
-                if !n.isEmpty { out[n, default: 0] += r.quantity }
+                if !n.isEmpty && r.quantity > 0 { out[n, default: 0] += r.quantity }
             }
         }
         return out
     }
 
     private var quickMismatches: [Date] {
-        quickDates.filter { quickOur($0) != quickCompany($0) }
+        quickDates.filter {
+            let ours = quickOur($0)
+            let company = quickCompany($0)
+            return !ours.isEmpty && !company.isEmpty && ours != company
+        }
     }
 
     private var quickMissingDates: [Date] {
@@ -1007,7 +1011,7 @@ struct DatiAnalizzatiView: View {
                                         Text("DA CONTROLLARE:")
                                             .font(.caption.bold())
                                             .foregroundColor(.secondary)
-                                        ForEach(Array((quickMissingDates + quickMismatches).prefix(8)), id: \.self) { d in
+                                        ForEach(Array(Set(quickMissingDates + quickMismatches)).sorted(), id: \.self) { d in
                                             HStack {
                                                 Image(systemName: "xmark.circle.fill")
                                                     .foregroundColor(.red)
@@ -1158,7 +1162,9 @@ struct ConfrontoManualeView: View {
     private var righeDaMostrare: [Lavorazione] {
         guard let bolletta = nostraBolletta else { return [] }
         return bolletta.lavorazioni.filter {
-            !($0.nome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            let nome = $0.nome.trimmingCharacters(in: .whitespacesAndNewlines)
+            let q = Int($0.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+            return !nome.isEmpty && q > 0
         }
     }
 
