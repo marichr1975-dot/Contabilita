@@ -878,6 +878,7 @@ struct DatiAnalizzatiView: View {
     @AppStorage("openai_api_key") private var apiKey = ""
     @State private var mostraChat = false
     @State private var mostraAPIKey = false
+    @State private var mostraConfrontoManuale = false
 
     private var fileNostre: URL? {
         guard !archivio.bollette.isEmpty else { return nil }
@@ -886,6 +887,78 @@ struct DatiAnalizzatiView: View {
 
     private var fileAzienda: URL? {
         fileStore.files.first
+    }
+
+    private var quickDates: [Date] {
+        var set = Set<Date>()
+        var cal = Calendar(identifier: .gregorian)
+        cal.locale = Locale(identifier: "it_IT")
+        for b in archivio.bollette { set.insert(cal.startOfDay(for: b.data)) }
+        for d in analysisStore.giorniAzienda() { set.insert(cal.startOfDay(for: d.date)) }
+        return set.sorted()
+    }
+
+    private func quickName(_ value: String) -> String {
+        value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func quickOur(_ date: Date) -> [String: Int] {
+        var cal = Calendar(identifier: .gregorian)
+        cal.locale = Locale(identifier: "it_IT")
+        var out: [String: Int] = [:]
+        for b in archivio.bollette where cal.isDate(b.data, inSameDayAs: date) {
+            for l in b.lavorazioni {
+                let n = quickName(l.nome)
+                let q = Int(l.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+                if !n.isEmpty && q != 0 { out[n, default: 0] += q }
+            }
+        }
+        return out
+    }
+
+    private func quickCompany(_ date: Date) -> [String: Int] {
+        var cal = Calendar(identifier: .gregorian)
+        cal.locale = Locale(identifier: "it_IT")
+        var out: [String: Int] = [:]
+        for d in analysisStore.giorniAzienda() where cal.isDate(d.date, inSameDayAs: date) {
+            for r in d.rows {
+                let n = quickName(r.article)
+                if !n.isEmpty { out[n, default: 0] += r.quantity }
+            }
+        }
+        return out
+    }
+
+    private var quickMismatches: [Date] {
+        quickDates.filter { quickOur($0) != quickCompany($0) }
+    }
+
+    private var quickMissingDates: [Date] {
+        var cal = Calendar(identifier: .gregorian)
+        cal.locale = Locale(identifier: "it_IT")
+        return quickDates.filter { d in
+            let ours = archivio.bollette.contains { cal.isDate($0.data, inSameDayAs: d) }
+            let company = analysisStore.giorniAzienda().contains { cal.isDate($0.date, inSameDayAs: d) }
+            return ours != company
+        }
+    }
+
+    private var quickTotalOur: Int {
+        archivio.bollette.reduce(0) { p, b in
+            p + b.lavorazioni.reduce(0) { $0 + (Int($1.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) }
+        }
+    }
+
+    private var quickTotalCompany: Int {
+        analysisStore.giorniAzienda().reduce(0) { p, d in p + d.rows.reduce(0) { $0 + $1.quantity } }
+    }
+
+    private func dataBreve(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "it_IT")
+        f.dateFormat = "dd/MM/yyyy"
+        return f.string(from: date)
     }
 
     private var testoAnalisi: String {
@@ -913,11 +986,69 @@ struct DatiAnalizzatiView: View {
                             .font(.title2.weight(.bold))
                             .padding(.top, 8)
 
-                        Text("I due file vengono letti direttamente dall'app e analizzati nella chat qui sotto.")
+                        Text("Prima fai il controllo rapido. Poi, se vuoi, verifica una data alla volta sul foglio stampato della ditta.")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 8)
+
+                        if fileNostre != nil && fileAzienda != nil && !analysisStore.giorniAzienda().isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Image(systemName: quickMismatches.isEmpty && quickMissingDates.isEmpty && quickTotalOur == quickTotalCompany ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                        .foregroundColor(quickMismatches.isEmpty && quickMissingDates.isEmpty && quickTotalOur == quickTotalCompany ? .green : .orange)
+                                    Text("CHECK RAPIDO")
+                                        .font(.headline)
+                                    Spacer()
+                                }
+
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text("Date con differenze")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        Text("\(quickMismatches.count + quickMissingDates.count)")
+                                            .font(.title2.bold())
+                                    }
+                                    Spacer()
+                                    VStack(alignment: .trailing) {
+                                        Text("Totale pezzi")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        Text("\(quickTotalOur) / \(quickTotalCompany)")
+                                            .font(.headline.bold())
+                                    }
+                                }
+
+                                if !quickMissingDates.isEmpty || !quickMismatches.isEmpty {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("DA CONTROLLARE:")
+                                            .font(.caption.bold())
+                                            .foregroundColor(.secondary)
+                                        ForEach(Array((quickMissingDates + quickMismatches).prefix(8)), id: \.self) { d in
+                                            HStack {
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .foregroundColor(.red)
+                                                Text(dataBreve(d))
+                                                    .font(.subheadline.weight(.semibold))
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Text("Date e quantità combaciano. Anche il totale generale combacia.")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.green)
+                                }
+                            }
+                            .padding(16)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.orange.opacity(0.07))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.orange.opacity(0.22), lineWidth: 1)
+                            )
+                            .cornerRadius(14)
+                        }
 
                         fileCard(
                             title: "NOSTRE BOLLETTE",
@@ -968,6 +1099,23 @@ struct DatiAnalizzatiView: View {
                                         .font(.footnote)
                                 }
                                 .buttonStyle(.bordered)
+
+
+                                Button {
+                                    mostraConfrontoManuale = true
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "checklist")
+                                        Text("INIZIA CONFRONTO")
+                                            .font(.headline)
+                                        Spacer()
+                                        Image(systemName: "arrow.right")
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 14)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.blue)
                             }
                             .padding(16)
                             .frame(maxWidth: .infinity)
@@ -1017,6 +1165,9 @@ struct DatiAnalizzatiView: View {
             .sheet(isPresented: $mostraAPIKey) {
                 APIKeyView(apiKey: $apiKey)
             }
+            .sheet(isPresented: $mostraConfrontoManuale) {
+                ConfrontoManualeView(archivio: archivio, analysisStore: analysisStore)
+            }
         }
         .navigationViewStyle(.stack)
     }
@@ -1049,6 +1200,420 @@ struct DatiAnalizzatiView: View {
         .padding(14)
         .background(tint.opacity(0.08))
         .cornerRadius(12)
+    }
+}
+
+
+struct ConfrontoManualeView: View {
+    @ObservedObject var archivio: Archivio
+    @ObservedObject var analysisStore: PDFAnalysisStore
+    @Environment(\.presentationMode) private var presentationMode
+
+    @State private var indice = 0
+    @State private var esiti: [Date: Bool] = [:]
+    @State private var mostraRisultato = false
+
+    private var calendario: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.locale = Locale(identifier: "it_IT")
+        return c
+    }
+
+    private var giorni: [PDFAnalysisDay] {
+        let azienda = analysisStore.giorniAzienda()
+        let nostre = archivio.bollette.map { bolletta in
+            PDFAnalysisDay(
+                date: bolletta.data,
+                rows: bolletta.lavorazioni.compactMap { lavoro in
+                    guard let q = Int(lavoro.quantita.trimmingCharacters(in: .whitespacesAndNewlines)), q > 0 else { return nil }
+                    return PDFAnalysisRow(article: lavoro.nome, quantity: q)
+                }
+            )
+        }
+
+        var dates: Set<Date> = []
+        for day in azienda { dates.insert(calendario.startOfDay(for: day.date)) }
+        for day in nostre { dates.insert(calendario.startOfDay(for: day.date)) }
+        return dates.sorted()
+    }
+
+    private var giornoCorrente: Date? {
+        guard indice < giorni.count else { return nil }
+        return giorni[indice]
+    }
+
+    private var nostraBolletta: Bolletta? {
+        guard let data = giornoCorrente else { return nil }
+        return archivio.bollette.first { calendario.isDate($0.data, inSameDayAs: data) }
+    }
+
+    private var giornoAzienda: PDFAnalysisDay? {
+        guard let data = giornoCorrente else { return nil }
+        return analysisStore.giorniAzienda().first { calendario.isDate($0.date, inSameDayAs: data) }
+    }
+
+    private var righeDaMostrare: [Lavorazione] {
+        guard let bolletta = nostraBolletta else { return [] }
+        return bolletta.lavorazioni.filter {
+            !($0.nome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
+    private var totaleNostro: Int {
+        righeDaMostrare.reduce(0) { $0 + (Int($1.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) }
+    }
+
+    private var totaleAzienda: Int {
+        giornoAzienda?.rows.reduce(0) { $0 + $1.quantity } ?? 0
+    }
+
+    private var checkRapidoOK: Bool {
+        let nostre = aggregaNostre(laData: giornoCorrente)
+        let azienda = aggregaAzienda(laData: giornoCorrente)
+        return !nostre.isEmpty && !azienda.isEmpty && nostre == azienda
+    }
+
+    private var dateMancanti: [Date] {
+        giorni.filter { data in
+            let hasNostre = archivio.bollette.contains { calendario.isDate($0.data, inSameDayAs: data) }
+            let hasAzienda = analysisStore.giorniAzienda().contains { calendario.isDate($0.date, inSameDayAs: data) }
+            return hasNostre != hasAzienda
+        }
+    }
+
+    private var differenzeRapide: [Date] {
+        giorni.filter { data in
+            let n = aggregaNostre(laData: data)
+            let a = aggregaAzienda(laData: data)
+            return !n.isEmpty && !a.isEmpty && n != a
+        }
+    }
+
+    private var totaleNostroGenerale: Int {
+        archivio.bollette.reduce(0) { partial, b in
+            partial + b.lavorazioni.reduce(0) { $0 + (Int($1.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) }
+        }
+    }
+
+    private var totaleAziendaGenerale: Int {
+        analysisStore.giorniAzienda().reduce(0) { $0 + $1.rows.reduce(0) { $0 + $1.quantity } }
+    }
+
+    private func normalizza(_ nome: String) -> String {
+        nome.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func aggregaNostre(laData data: Date?) -> [String: Int] {
+        guard let data else { return [:] }
+        var out: [String: Int] = [:]
+        for b in archivio.bollette where calendario.isDate(b.data, inSameDayAs: data) {
+            for l in b.lavorazioni {
+                let nome = normalizza(l.nome)
+                let q = Int(l.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+                if !nome.isEmpty && q != 0 { out[nome, default: 0] += q }
+            }
+        }
+        return out
+    }
+
+    private func aggregaAzienda(laData data: Date?) -> [String: Int] {
+        guard let data else { return [:] }
+        var out: [String: Int] = [:]
+        for day in analysisStore.giorniAzienda() where calendario.isDate(day.date, inSameDayAs: data) {
+            for row in day.rows {
+                let nome = normalizza(row.article)
+                if !nome.isEmpty { out[nome, default: 0] += row.quantity }
+            }
+        }
+        return out
+    }
+
+    private func formatData(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "it_IT")
+        f.dateFormat = "dd/MM/yyyy"
+        return f.string(from: date)
+    }
+
+    private func nomeMese(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "it_IT")
+        f.dateFormat = "dd MMMM yyyy"
+        return f.string(from: date).uppercased()
+    }
+
+    private func vaiAvanti() {
+        if let data = giornoCorrente, esiti[data] == nil {
+            esiti[data] = false
+        }
+        if indice + 1 < giorni.count {
+            indice += 1
+        } else {
+            mostraRisultato = true
+        }
+    }
+
+    private func registra(_ esito: Bool) {
+        guard let data = giornoCorrente else { return }
+        esiti[data] = esito
+        if indice + 1 < giorni.count {
+            indice += 1
+        } else {
+            mostraRisultato = true
+        }
+    }
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if giorni.isEmpty {
+                    VStack(spacing: 14) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.system(size: 48))
+                            .foregroundColor(.blue)
+                        Text("NESSUN CONFRONTO DISPONIBILE")
+                            .font(.title2.weight(.bold))
+                            .multilineTextAlignment(.center)
+                        Text("Prima importa il file della ditta e assicurati che le nostre bollette siano presenti nell'archivio.")
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(30)
+                } else if let data = giornoCorrente {
+                    VStack(spacing: 12) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("CONFRONTO \(indice + 1) / \(giorni.count)")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundColor(.secondary)
+                                Text(formatData(data))
+                                    .font(.system(size: 28, weight: .bold))
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 3) {
+                                Text("PEZZI")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundColor(.secondary)
+                                Text("\(totaleNostro)")
+                                    .font(.title2.weight(.bold))
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+
+                        Text(nomeMese(data))
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.blue)
+
+                        // Una sola riga: DATA + ARTICOLO + Q.TÀ.
+                        // La riga scorre orizzontalmente quando gli articoli sono molti.
+                        ScrollView(.horizontal, showsIndicators: true) {
+                            HStack(spacing: 10) {
+                                cella("DATA", formatData(data), larghezza: 92)
+                                ForEach(righeDaMostrare) { lavoro in
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(lavoro.nome)
+                                            .font(.subheadline.weight(.semibold))
+                                            .lineLimit(2)
+                                        Text(lavoro.quantita)
+                                            .font(.title3.weight(.bold))
+                                    }
+                                    .frame(width: 125, alignment: .leading)
+                                    .padding(10)
+                                    .background(Color.blue.opacity(0.08))
+                                    .cornerRadius(10)
+                                }
+                                if righeDaMostrare.isEmpty {
+                                    VStack(alignment: .leading) {
+                                        Text("NESSUNA BOLLETTA")
+                                            .font(.subheadline.weight(.bold))
+                                        Text("Data assente nelle nostre bollette")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .frame(width: 220, alignment: .leading)
+                                    .padding(10)
+                                    .background(Color.red.opacity(0.08))
+                                    .cornerRadius(10)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                        }
+
+                        HStack(spacing: 12) {
+                            Label("Nostre: \(totaleNostro)", systemImage: "bag.fill")
+                            Label("Ditta: \(totaleAzienda)", systemImage: "building.2.fill")
+                            Spacer()
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 16)
+
+                        Text("Confronta questa riga con il foglio Excel stampato della ditta.")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 20)
+
+                        Spacer(minLength: 8)
+
+                        HStack(spacing: 14) {
+                            Button {
+                                registra(false)
+                            } label: {
+                                Label("NO", systemImage: "xmark.circle.fill")
+                                    .font(.title3.weight(.bold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 16)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+
+                            Button {
+                                registra(true)
+                            } label: {
+                                Label("SÌ", systemImage: "checkmark.circle.fill")
+                                    .font(.title3.weight(.bold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 16)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.green)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                    }
+                }
+            }
+            .navigationTitle("Confronto manuale")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
+                }
+            }
+            .sheet(isPresented: $mostraRisultato) {
+                RisultatoConfrontoManualeView(
+                    giorni: giorni,
+                    esiti: esiti,
+                    totaleNostro: totaleNostroGenerale,
+                    totaleAzienda: totaleAziendaGenerale,
+                    dateMancanti: dateMancanti,
+                    differenzeRapide: differenzeRapide
+                )
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+
+    @ViewBuilder
+    private func cella(_ titolo: String, _ valore: String, larghezza: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(titolo)
+                .font(.caption.weight(.bold))
+                .foregroundColor(.secondary)
+            Text(valore)
+                .font(.subheadline.weight(.semibold))
+        }
+        .frame(width: larghezza, alignment: .leading)
+        .padding(10)
+        .background(Color.gray.opacity(0.10))
+        .cornerRadius(10)
+    }
+}
+
+struct RisultatoConfrontoManualeView: View {
+    let giorni: [PDFAnalysisDay]
+    let esiti: [Date: Bool]
+    let totaleNostro: Int
+    let totaleAzienda: Int
+    let dateMancanti: [Date]
+    let differenzeRapide: [Date]
+
+    @Environment(\.presentationMode) private var presentationMode
+
+    private var okCount: Int {
+        esiti.values.filter { $0 }.count
+    }
+
+    private var noCount: Int {
+        esiti.values.filter { !$0 }.count
+    }
+
+    private func data(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "it_IT")
+        f.dateFormat = "dd/MM/yyyy"
+        return f.string(from: d)
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section("VERIFICA MANUALE") {
+                    HStack {
+                        Label("OK", systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Spacer()
+                        Text("\(okCount)")
+                            .font(.headline)
+                    }
+                    HStack {
+                        Label("Differenze", systemImage: "xmark.circle.fill")
+                            .foregroundColor(.red)
+                        Spacer()
+                        Text("\(noCount)")
+                            .font(.headline)
+                    }
+                }
+
+                Section("CONTROLLO TOTALE PEZZI") {
+                    HStack {
+                        Text("Nostre bollette")
+                        Spacer()
+                        Text("\(totaleNostro)")
+                    }
+                    HStack {
+                        Text("File ditta")
+                        Spacer()
+                        Text("\(totaleAzienda)")
+                    }
+                    HStack {
+                        Text("Totale")
+                        Spacer()
+                        Text(totaleNostro == totaleAzienda ? "COMBACIA" : "NON COMBACIA")
+                            .fontWeight(.bold)
+                            .foregroundColor(totaleNostro == totaleAzienda ? .green : .red)
+                    }
+                }
+
+                if !dateMancanti.isEmpty {
+                    Section("DATE DA CONTROLLARE") {
+                        ForEach(dateMancanti, id: \.self) { d in
+                            Label(data(d), systemImage: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                        }
+                    }
+                }
+
+                if !differenzeRapide.isEmpty {
+                    Section("QUANTITÀ / ARTICOLI DIFFERENTI") {
+                        ForEach(differenzeRapide, id: \.self) { d in
+                            Label(data(d), systemImage: "xmark.circle.fill")
+                                .foregroundColor(.red)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Risultato finale")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
     }
 }
 
