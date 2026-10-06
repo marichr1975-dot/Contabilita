@@ -379,14 +379,39 @@ struct GruppoLavorazione: Identifiable {
     var voci: [VoceLavorazione]
 }
 
+/// Ordine ufficiale degli articoli, identico alle colonne del file Excel aziendale.
+/// Questa sequenza viene usata sia in NUOVA BOLLETTA sia in MODIFICA BOLLETTA.
+let ordineArticoliAzienda: [String] = [
+    "GLAM",
+    "GLAM XL",
+    "ESSENTIAL",
+    "CLOSE",
+    "CASE",
+    "TRAINING",
+    "MESSENGER",
+    "BAGPACK",
+    "TODAY",
+    "ACTIVITY",
+    "ZAINI MARINA",
+    "CLASSY",
+    "ZAINO PRO",
+    "case marina",
+    "MONEYFUL",
+    "BORSA IN STOFFA",
+    "PORTAPC"
+]
+
+func normalizzaArticolo(_ nome: String) -> String {
+    nome.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: " ", with: "")
+        .replacingOccurrences(of: "-", with: "")
+}
+
 func gruppiBollettaDaNomi() -> [GruppoLavorazione] {
-    // Ordine e nomi presi direttamente dal file Excel aziendale.
-    let articoli = [
-        "MESSENGER", "BAGPACK", "TODAY", "ACTIVITY", "ZAINI MARIN",
-        "CLASSY", "ZAINO PRO", "case marina", "MONEYFUL",
-        "BORSA IN STOFFA", "PORTAPC"
-    ]
-    return articoli.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) }
+    return ordineArticoliAzienda.map {
+        GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")])
+    }
 }
 
 struct NuovaBollettaView: View {
@@ -446,8 +471,8 @@ struct NuovaBollettaView: View {
             _gruppi = State(initialValue: gruppiIniziali)
         } else {
             var iniziali = gruppiBollettaDaNomi()
-            let standard = Set(iniziali.map { $0.nome.lowercased() })
-            let personalizzati = archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }
+            let standard = Set(ordineArticoliAzienda.map { normalizzaArticolo($0) })
+            let personalizzati = archivio.nomiLavorazioni.filter { !standard.contains(normalizzaArticolo($0)) }
             iniziali.append(contentsOf: personalizzati.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
             _gruppi = State(initialValue: iniziali)
         }
@@ -520,8 +545,8 @@ struct NuovaBollettaView: View {
         .onAppear {
             if gruppi.isEmpty && bollettaDaModificare == nil {
                 gruppi = gruppiBollettaDaNomi()
-                let standard = Set(gruppi.map { $0.nome.lowercased() })
-                gruppi.append(contentsOf: archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
+                let standard = Set(ordineArticoliAzienda.map { normalizzaArticolo($0) })
+                gruppi.append(contentsOf: archivio.nomiLavorazioni.filter { !standard.contains(normalizzaArticolo($0)) }.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
             }
         }
     }
