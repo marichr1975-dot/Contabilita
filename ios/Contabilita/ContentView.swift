@@ -1,4 +1,14 @@
 import SwiftUI
+import UIKit
+
+private func apriChatGPT() {
+    UIPasteboard.general.string = testoAnalisiChatGPT
+    if let appURL = URL(string: "chatgpt://"), UIApplication.shared.canOpenURL(appURL) {
+        UIApplication.shared.open(appURL)
+    } else if let webURL = URL(string: "https://chatgpt.com/") {
+        UIApplication.shared.open(webURL)
+    }
+}
 
 private let testoAnalisiChatGPT = """
 ANALIZZA QUESTI DUE FILE.
@@ -168,24 +178,6 @@ struct ContentView: View {
     @State private var mostraArchivioAnalisi = false
     @State private var mostraPDF = false
     @State private var pdfImportati = 0
-
-    private func apriChatGPT() {
-        // Il testo viene copiato negli appunti così, una volta aperta ChatGPT,
-        // è già pronto per essere incollato nella nuova conversazione.
-        UIPasteboard.general.string = testoAnalisiChatGPT
-
-        // Prova prima lo schema dell'app; se non è disponibile usa il link
-        // universale ufficiale di ChatGPT.
-        if let appURL = URL(string: "chatgpt://") {
-            UIApplication.shared.open(appURL, options: [:]) { success in
-                if !success, let webURL = URL(string: "https://chatgpt.com/") {
-                    UIApplication.shared.open(webURL)
-                }
-            }
-        } else if let webURL = URL(string: "https://chatgpt.com/") {
-            UIApplication.shared.open(webURL)
-        }
-    }
 
     var body: some View {
         NavigationView {

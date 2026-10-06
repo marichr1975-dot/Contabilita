@@ -114,7 +114,7 @@ final class ExcelAnalysis {
 
     private static func read(_ a:Archive,_ path:String)->Data? {
         guard let e=a[path] else{return nil}; var d=Data()
-        do { try a.extract(e, consumer: { chunk in d.append(chunk) }); return d } catch { return nil }
+        do { _ = try a.extract(e, consumer: { chunk in d.append(chunk) }); return d } catch { return nil }
     }
 
     private static func sharedStrings(_ a:Archive)->[String] {
