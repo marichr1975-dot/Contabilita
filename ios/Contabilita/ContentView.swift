@@ -965,131 +965,10 @@ struct DatiAnalizzatiView: View {
 
 
     var body: some View {
-        AnyView(NavigationView {
-            VStack(spacing: 12) {
-                ScrollView {
-                    VStack(spacing: 14) {
-                        Text("ANALISI")
-                            .font(.title2.weight(.bold))
-                            .padding(.top, 8)
-
-                        Text("Prima fai il controllo rapido. Poi, se vuoi, verifica una data alla volta sul foglio stampato della ditta.")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 8)
-
-                        if fileNostre != nil && fileAzienda != nil && !analysisStore.giorniAzienda().isEmpty {
-                            VStack(alignment: .leading, spacing: 10) {
-                                HStack {
-                                    Image(systemName: quickMismatches.isEmpty && quickMissingDates.isEmpty && quickTotalOur == quickTotalCompany ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                                        .foregroundColor(quickMismatches.isEmpty && quickMissingDates.isEmpty && quickTotalOur == quickTotalCompany ? .green : .orange)
-                                    Text("CHECK RAPIDO")
-                                        .font(.headline)
-                                    Spacer()
-                                }
-
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text("Date con differenze")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                        Text("\(quickMismatches.count + quickMissingDates.count)")
-                                            .font(.title2.bold())
-                                    }
-                                    Spacer()
-                                    VStack(alignment: .trailing) {
-                                        Text("Totale pezzi")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                        Text("\(quickTotalOur) / \(quickTotalCompany)")
-                                            .font(.headline.bold())
-                                    }
-                                }
-
-                                if !quickMissingDates.isEmpty || !quickMismatches.isEmpty {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("DA CONTROLLARE:")
-                                            .font(.caption.bold())
-                                            .foregroundColor(.secondary)
-                                        ForEach(Array(Set(quickMissingDates + quickMismatches)).sorted(), id: \.self) { d in
-                                            HStack {
-                                                Image(systemName: "xmark.circle.fill")
-                                                    .foregroundColor(.red)
-                                                Text(dataBreve(d))
-                                                    .font(.subheadline.weight(.semibold))
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    Text("Date e quantità combaciano. Anche il totale generale combacia.")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundColor(.green)
-                                }
-                            }
-                            .padding(16)
-                            .frame(maxWidth: .infinity)
-                            .background(Color.orange.opacity(0.07))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(Color.orange.opacity(0.22), lineWidth: 1)
-                            )
-                            .cornerRadius(14)
-                        }
-
-                        if fileNostre != nil && fileAzienda != nil {
-                            Button {
-                                if let url = AnalisiTXTExporter.creaTXT(archivio: archivio, analysisStore: analysisStore, fileStore: fileStore) {
-                                    txtDaCondividere = url
-                                }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "doc.text")
-                                    Text("ESTRAI TXT")
-                                        .font(.headline)
-                                    Spacer()
-                                    Image(systemName: "square.and.arrow.up")
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(.teal)
-
-                            Button {
-                                mostraConfrontoManuale = true
-                            } label: {
-                                HStack {
-                                    Image(systemName: "checklist")
-                                    Text("INIZIA CONFRONTO")
-                                        .font(.headline)
-                                    Spacer()
-                                    Image(systemName: "arrow.right")
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.blue)
-                        } else {
-                            VStack(spacing: 8) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
-                                Text("Per fare l'analisi servono entrambi i file.")
-                                    .font(.headline)
-                                Text("Inserisci/modifica le nostre bollette e carica il file dell'azienda dal menu dedicato.")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .padding(16)
-                            .frame(maxWidth: .infinity)
-                            .background(Color.orange.opacity(0.08))
-                            .cornerRadius(14)
-                        }
-                    }
+        NavigationView {
+            ScrollView {
+                analysisPage
                     .padding(14)
-                }
             }
             .navigationTitle("Analisi")
             .navigationBarTitleDisplayMode(.inline)
@@ -1106,7 +985,142 @@ struct DatiAnalizzatiView: View {
             }
         }
         .navigationViewStyle(.stack)
-        })
+    }
+
+    @ViewBuilder
+    private var analysisPage: some View {
+        VStack(spacing: 14) {
+            Text("ANALISI")
+                .font(.title2.weight(.bold))
+                .padding(.top, 8)
+
+            Text("Prima fai il controllo rapido. Poi, se vuoi, verifica una data alla volta sul foglio stampato della ditta.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 8)
+
+            if fileNostre != nil && fileAzienda != nil && !analysisStore.giorniAzienda().isEmpty {
+                quickCheckView
+            }
+
+            if fileNostre != nil && fileAzienda != nil {
+                analysisActionsView
+            } else {
+                missingFilesView
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var quickCheckView: some View {
+        let hasDifferences = !quickMismatches.isEmpty || !quickMissingDates.isEmpty || quickTotalOur != quickTotalCompany
+
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: hasDifferences ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .foregroundColor(hasDifferences ? .orange : .green)
+                Text("CHECK RAPIDO")
+                    .font(.headline)
+                Spacer()
+            }
+
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("Date con differenze")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("\(quickMismatches.count + quickMissingDates.count)")
+                        .font(.title2.bold())
+                }
+                Spacer()
+                VStack(alignment: .trailing) {
+                    Text("Totale pezzi")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("\(quickTotalOur) / \(quickTotalCompany)")
+                        .font(.headline.bold())
+                }
+            }
+
+            if !quickMissingDates.isEmpty || !quickMismatches.isEmpty {
+                Text("DA CONTROLLARE:")
+                    .font(.caption.bold())
+                    .foregroundColor(.secondary)
+                ForEach(Array(Set(quickMissingDates + quickMismatches)).sorted(), id: \.self) { date in
+                    HStack {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.red)
+                        Text(dataBreve(date))
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+            } else {
+                Text("Date e quantità combaciano. Anche il totale generale combacia.")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.green)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity)
+        .background(Color.orange.opacity(0.07))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.22), lineWidth: 1))
+        .cornerRadius(14)
+    }
+
+    @ViewBuilder
+    private var analysisActionsView: some View {
+        VStack(spacing: 10) {
+            Button {
+                if let url = AnalisiTXTExporter.creaTXT(archivio: archivio, analysisStore: analysisStore, fileStore: fileStore) {
+                    txtDaCondividere = url
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "doc.text")
+                    Text("ESTRAI TXT").font(.headline)
+                    Spacer()
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+            }
+            .buttonStyle(.bordered)
+            .tint(.teal)
+
+            Button {
+                mostraConfrontoManuale = true
+            } label: {
+                HStack {
+                    Image(systemName: "checklist")
+                    Text("INIZIA CONFRONTO").font(.headline)
+                    Spacer()
+                    Image(systemName: "arrow.right")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.blue)
+        }
+    }
+
+    @ViewBuilder
+    private var missingFilesView: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+            Text("Per fare l'analisi servono entrambi i file.")
+                .font(.headline)
+            Text("Inserisci/modifica le nostre bollette e carica il file dell'azienda dal menu dedicato.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity)
+        .background(Color.orange.opacity(0.08))
+        .cornerRadius(14)
     }
 
     @ViewBuilder
