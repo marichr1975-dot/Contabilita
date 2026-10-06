@@ -1219,21 +1219,14 @@ struct ConfrontoManualeView: View {
         return c
     }
 
-    private var giorni: [PDFAnalysisDay] {
-        let azienda = analysisStore.giorniAzienda()
-        let nostre = archivio.bollette.map { bolletta in
-            PDFAnalysisDay(
-                date: bolletta.data,
-                rows: bolletta.lavorazioni.compactMap { lavoro in
-                    guard let q = Int(lavoro.quantita.trimmingCharacters(in: .whitespacesAndNewlines)), q > 0 else { return nil }
-                    return PDFAnalysisRow(article: lavoro.nome, quantity: q)
-                }
-            )
-        }
-
+    private var giorni: [Date] {
         var dates: Set<Date> = []
-        for day in azienda { dates.insert(calendario.startOfDay(for: day.date)) }
-        for day in nostre { dates.insert(calendario.startOfDay(for: day.date)) }
+        for day in analysisStore.giorniAzienda() {
+            dates.insert(calendario.startOfDay(for: day.date))
+        }
+        for bolletta in archivio.bollette {
+            dates.insert(calendario.startOfDay(for: bolletta.data))
+        }
         return dates.sorted()
     }
 
