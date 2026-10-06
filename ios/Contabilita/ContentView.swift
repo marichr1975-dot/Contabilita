@@ -1516,7 +1516,7 @@ struct ConfrontoManualeView: View {
 }
 
 struct RisultatoConfrontoManualeView: View {
-    let giorni: [PDFAnalysisDay]
+    let giorni: [Date]
     let esiti: [Date: Bool]
     let totaleNostro: Int
     let totaleAzienda: Int
