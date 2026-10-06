@@ -8,8 +8,6 @@
     <string>1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
-    <key>NSCameraUsageDescription</key>
-    <string>La fotocamera serve per fotografare le bollette e leggerne automaticamente data e quantità.</string>
     <key>UILaunchScreen</key>
     <dict/>
 </dict>

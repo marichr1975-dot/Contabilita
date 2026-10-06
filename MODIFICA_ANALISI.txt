@@ -1,0 +1,9 @@
+
+MODIFICA ANALISI - 06/10/2026
+
+- Le bollette manuali continuano a essere salvate nell'archivio interno.
+- A ogni salvataggio/modifica viene rigenerato Documents/NOSTRE_BOLLETTE.xlsx.
+- Il file contiene una riga per ogni bolletta, la data, tutti gli articoli presenti e il totale pezzi.
+- Il file aziendale continua a essere importato dal menu esistente e resta con il suo nome originale.
+- ANALISI mostra i due file e prepara la condivisione con una richiesta di analisi dettagliata.
+- Il pulsante INVIA A CHATGPT PER ANALISI apre il foglio di condivisione iOS con entrambi i file e il testo della richiesta.

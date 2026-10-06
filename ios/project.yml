@@ -37,9 +37,8 @@ targets:
       path: Contabilita/Info.plist
       properties:
         CFBundleDisplayName: Contabilità
-        CFBundleShortVersionString: "1.7"
-        CFBundleVersion: "17"
-        NSCameraUsageDescription: "La fotocamera serve per fotografare le bollette e leggerne automaticamente data e quantità."
+        CFBundleShortVersionString: "1.5"
+        CFBundleVersion: "15"
         UILaunchScreen: {}
         CFBundleURLTypes:
           - CFBundleURLName: com.gotrail.contabilita.import
@@ -66,8 +65,8 @@ targets:
       properties:
         CFBundleDisplayName: Contabilità
         CFBundlePackageType: XPC!
-        CFBundleShortVersionString: "1.7"
-        CFBundleVersion: "17"
+        CFBundleShortVersionString: "1.5"
+        CFBundleVersion: "15"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController

@@ -56,6 +56,7 @@ final class Archivio: ObservableObject {
 
     init() {
         carica()
+        aggiornaFileNostreBollette()
     }
 
     func carica() {
@@ -77,6 +78,7 @@ final class Archivio: ObservableObject {
         if let data = try? JSONEncoder().encode(nomiLavorazioni) {
             UserDefaults.standard.set(data, forKey: nomiKey)
         }
+        aggiornaFileNostreBollette()
     }
 
     func salvaBolletta(_ bolletta: Bolletta) {
@@ -104,6 +106,29 @@ final class Archivio: ObservableObject {
         guard !nomiLavorazioni.contains(where: { $0.caseInsensitiveCompare(nomePulito) == .orderedSame }) else { return }
         nomiLavorazioni.append(nomePulito)
         salvaDati()
+    }
+
+    /// File Excel sempre aggiornato con tutte le bollette inserite/modificate.
+    /// Viene riscritto ad ogni salvataggio, mantenendo tutte le date, gli articoli
+    /// e le quantità presenti nell'archivio.
+    func fileNostreBollette() -> URL? {
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("NOSTRE_BOLLETTE.xlsx")
+        if !FileManager.default.fileExists(atPath: url.path) {
+            aggiornaFileNostreBollette()
+        }
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    private func aggiornaFileNostreBollette() {
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("NOSTRE_BOLLETTE.xlsx")
+
+        do {
+            try NostreBolletteExcel.creaFile(bollette: bollette, nomiLavorazioni: nomiLavorazioni, url: url)
+        } catch {
+            print("Errore creazione NOSTRE_BOLLETTE.xlsx: \(error)")
+        }
     }
 }
 
@@ -167,10 +192,10 @@ struct ContentView: View {
                 SelezionaDataModificaView(archivio: archivio)
             }
             .sheet(isPresented: $mostraDatiAnalizzati) {
-                DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore)
+                DatiAnalizzatiView(archivio: archivio, analysisStore: analysisStore, fileStore: pdfTransfer)
             }
             .sheet(isPresented: $mostraArchivioAnalisi) {
-                ArchivioAnalisiView(analysisStore: analysisStore, archivio: archivio)
+                ArchivioAnalisiView(analysisStore: analysisStore)
             }
             .sheet(isPresented: $mostraPDF) {
                 PDFImportatiView(store: pdfTransfer, analysisStore: analysisStore, archivio: archivio)
@@ -304,95 +329,6 @@ struct PDFImportatiView: View {
 }
 
 
-struct OCRRisultatoView: View {
-    let result: BollettaOCRResult
-    let applica: () -> Void
-    let chiudi: () -> Void
-
-    private var dataTesto: String {
-        guard let date = result.date else { return "NON RICONOSCIUTA" }
-        let f = DateFormatter()
-        f.dateFormat = "dd/MM/yyyy"
-        f.locale = Locale(identifier: "it_IT")
-        return f.string(from: date)
-    }
-
-    var body: some View {
-        NavigationView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("DATI RACCOLTI DALLA FOTOCAMERA")
-                    .font(.title3.weight(.bold))
-
-                HStack {
-                    Text("DATA")
-                        .fontWeight(.semibold)
-                    Spacer()
-                    Text(dataTesto)
-                        .foregroundColor(result.date == nil ? .red : .green)
-                }
-                .padding(10)
-                .background(Color.gray.opacity(0.10))
-                .cornerRadius(10)
-
-                Text("QUANTITÀ RICONOSCIUTE")
-                    .font(.headline)
-                    .padding(.top, 4)
-
-                if result.quantities.isEmpty {
-                    Text("Nessuna quantità riconosciuta.")
-                        .foregroundColor(.red)
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(result.quantities.keys.sorted(), id: \.self) { nome in
-                                HStack {
-                                    Text(nome)
-                                    Spacer()
-                                    Text("\(result.quantities[nome] ?? 0)")
-                                        .fontWeight(.bold)
-                                }
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 150)
-                }
-
-                Text("TESTO OCR GREZZO")
-                    .font(.headline)
-                    .padding(.top, 4)
-
-                ScrollView {
-                    Text(result.rawText.isEmpty ? "Nessun testo riconosciuto." : result.rawText)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                        .padding(10)
-                }
-                .background(Color.gray.opacity(0.08))
-                .cornerRadius(10)
-
-                HStack(spacing: 12) {
-                    Button("CHIUDI") {
-                        chiudi()
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
-
-                    Button("APPLICA DATI") {
-                        applica()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(16)
-            .navigationTitle("Risultato OCR")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .navigationViewStyle(.stack)
-    }
-}
-
 struct PDFViewer: View {
     let url: URL
     @Environment(\.presentationMode) private var presentationMode
@@ -465,10 +401,6 @@ struct NuovaBollettaView: View {
     @State private var mostraConfermaCancella = false
     @State private var nuovoArticolo = ""
     @State private var mostraAggiungiArticolo = false
-    @State private var mostraFotocamera = false
-    @State private var messaggioScanner = ""
-    @State private var risultatoOCR: BollettaOCRResult?
-    @State private var mostraMascheraDopoOCR = false
 
     init(archivio: Archivio, bollettaDaModificare: Bolletta? = nil) {
         self.archivio = archivio
@@ -522,72 +454,31 @@ struct NuovaBollettaView: View {
     }
 
     var body: some View {
-        Group {
-            if mostraFotocamera {
-                // Fotocamera e risultato OCR vivono nello stesso contenitore.
-                // Dopo lo scatto sostituiamo direttamente la fotocamera con il risultato,
-                // senza sheet/fullScreenCover annidati che su iOS possono lasciare bianco.
-                if let ocrResult = risultatoOCR {
-                    OCRRisultatoView(
-                        result: ocrResult,
-                        applica: {
-                            applicaScansione(ocrResult)
-                            risultatoOCR = nil
-                            mostraFotocamera = false
-                            mostraMascheraDopoOCR = true
-                        },
-                        chiudi: {
-                            risultatoOCR = nil
-                            mostraFotocamera = false
-                            presentationMode.wrappedValue.dismiss()
-                        }
-                    )
+        NavigationView {
+            Group {
+                if !dataConfermata {
+                    scegliData
                 } else {
-                    BollettaScannerView(
-                        articleNames: gruppi.flatMap { g in
-                            g.voci.map { $0.nome.isEmpty ? g.nome : "\(g.nome) \($0.nome)" }
-                        },
-                        completion: { result in
-                            risultatoOCR = result
-                        },
-                        cancel: {
-                            mostraFotocamera = false
-                            presentationMode.wrappedValue.dismiss()
-                        }
-                    )
-                    .ignoresSafeArea()
+                    mascheraBolletta
                 }
-            } else {
-                NavigationView {
-                    Group {
-                        if bollettaDaModificare != nil || mostraMascheraDopoOCR {
-                            mascheraBolletta
-                        } else {
-                            Color.clear.ignoresSafeArea()
-                        }
-                    }
-                    .navigationTitle(dataConfermata ? "Elenco lavori" : (bollettaDaModificare == nil ? "Nuova bolletta" : "Modifica bolletta"))
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarLeading) {
-                            Button("Annulla") { presentationMode.wrappedValue.dismiss() }
-                        }
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            if dataConfermata {
-                                HStack(spacing: 14) {
-                                    Button { mostraFotocamera = true } label: {
-                                        Image(systemName: "camera.fill")
-                                    }
-                                    if bollettaDaModificare != nil {
-                                        Button("CANCELLA") {
-                                            mostraConfermaCancella = true
-                                        }
-                                        .foregroundColor(.red)
-                                    }
-                                    Button("SALVA") { salva() }
-                                        .font(.system(size: 17, weight: .bold))
+            }
+            .navigationTitle(dataConfermata ? "Elenco lavori" : (bollettaDaModificare == nil ? "Nuova bolletta" : "Modifica bolletta"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Annulla") { presentationMode.wrappedValue.dismiss() }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if dataConfermata {
+                        HStack(spacing: 14) {
+                            if bollettaDaModificare != nil {
+                                Button("CANCELLA") {
+                                    mostraConfermaCancella = true
                                 }
+                                .foregroundColor(.red)
                             }
+                            Button("SALVA") { salva() }
+                                .font(.system(size: 17, weight: .bold))
                         }
                     }
                 }
@@ -612,8 +503,10 @@ struct NuovaBollettaView: View {
                             .textInputAutocapitalization(.sentences)
                     }
                     Section {
-                        Button("AGGIUNGI") { aggiungiArticolo() }
-                            .disabled(nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("AGGIUNGI") {
+                            aggiungiArticolo()
+                        }
+                        .disabled(nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
                 .navigationTitle("Aggiungi articolo")
@@ -625,11 +518,28 @@ struct NuovaBollettaView: View {
             }
         }
         .onAppear {
-            if bollettaDaModificare == nil && !mostraFotocamera {
-                dataConfermata = true
-                DispatchQueue.main.async { mostraFotocamera = true }
+            if gruppi.isEmpty && bollettaDaModificare == nil {
+                gruppi = gruppiBollettaDaNomi()
+                let standard = Set(gruppi.map { $0.nome.lowercased() })
+                gruppi.append(contentsOf: archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
             }
         }
+    }
+
+    private var scegliData: some View {
+        VStack(spacing: 16) {
+            DataMeseSelector(data: $data)
+            Button {
+                dataConfermata = true
+                rigaAttiva = 0
+            } label: {
+                Text("CONFERMA DATA").font(.title2.weight(.semibold))
+                    .frame(maxWidth: .infinity).padding()
+            }
+            .buttonStyle(.borderedProminent)
+            Spacer()
+        }
+        .padding(22)
     }
 
     private var mascheraBolletta: some View {
@@ -655,6 +565,7 @@ struct NuovaBollettaView: View {
                             .padding(.vertical, 14)
                         }
                         .buttonStyle(.borderedProminent)
+
                     }
                     .padding(12)
                 }
@@ -763,29 +674,6 @@ struct NuovaBollettaView: View {
         gruppi.append(GruppoLavorazione(nome: nome, voci: [VoceLavorazione(nome: "")]))
         nuovoArticolo = ""
         mostraAggiungiArticolo = false
-    }
-
-    private func applicaScansione(_ result: BollettaOCRResult) {
-        if let scannedDate = result.date {
-            data = scannedDate
-            dataConfermata = true
-        }
-
-        var aggiornati = 0
-        for g in gruppi.indices {
-            for v in gruppi[g].voci.indices {
-                let nome = gruppi[g].voci[v].nome.isEmpty
-                    ? gruppi[g].nome
-                    : "\(gruppi[g].nome) \(gruppi[g].voci[v].nome)"
-                if let q = result.quantities[nome] {
-                    gruppi[g].voci[v].quantita = String(q)
-                    aggiornati += 1
-                }
-            }
-        }
-        messaggioScanner = result.date != nil
-            ? "Foto letta. Data riconosciuta e \(aggiornati) quantità compilate. Controlla i valori prima di salvare."
-            : "Foto letta. \(aggiornati) quantità compilate. Controlla i valori prima di salvare."
     }
 
     private func salva() {
@@ -984,239 +872,221 @@ struct NessunaBollettaView: View {
 struct DatiAnalizzatiView: View {
     @ObservedObject var archivio: Archivio
     @ObservedObject var analysisStore: PDFAnalysisStore
+    @ObservedObject var fileStore: PDFTransferStore
     @Environment(\.presentationMode) private var presentationMode
-    @State private var bollettaDaAprire: Bolletta?
+    @State private var mostraCondivisione = false
+    @State private var messaggio = ""
 
-    private var giorniAzienda: [PDFAnalysisDay] {
-        var perData: [Date: [PDFAnalysisRow]] = [:]
-        for giorno in analysisStore.giorniAzienda() {
-            perData[giorno.date, default: []].append(contentsOf: giorno.rows)
-        }
-        return perData.keys.sorted().map { PDFAnalysisDay(date: $0, rows: perData[$0] ?? []) }
+    private var fileNostre: URL? {
+        archivio.fileNostreBollette()
     }
 
-    private var tutteLeDate: [Date] {
-        let nostre = Set(archivio.bollette.map { giornoSenzaOra($0.data) })
-        let azienda = Set(giorniAzienda.map { giornoSenzaOra($0.date) })
-        return Array(nostre.union(azienda)).sorted(by: >)
+    private var fileAzienda: URL? {
+        fileStore.files.first
     }
 
-    private func giornoSenzaOra(_ data: Date) -> Date {
-        Calendar.current.startOfDay(for: data)
-    }
+    private var testoAnalisi: String {
+        """
+        ANALIZZA QUESTI DUE FILE.
 
-    private func bollettaNostra(per data: Date) -> Bolletta? {
-        archivio.bollette.first { giornoSenzaOra($0.data) == giornoSenzaOra(data) }
-    }
+        Il primo file (NOSTRE_BOLLETTE.xlsx) contiene le bollette inserite manualmente da noi, con date, articoli e quantità.
+        Il secondo file è il prospetto ricevuto dall'azienda.
 
-    private func giornoAzienda(per data: Date) -> PDFAnalysisDay? {
-        giorniAzienda.first { giornoSenzaOra($0.date) == giornoSenzaOra(data) }
-    }
+        Confronta i due file in modo intelligente, verificando:
+        1. date delle bollette;
+        2. articoli;
+        3. quantità dei pezzi;
+        4. eventuali bollette presenti da una parte e mancanti dall'altra;
+        5. casi in cui una bolletta mancante nel file aziendale sia stata eventualmente accorpata nella bolletta/data successiva;
+        6. casi inversi, cioè quantità presenti nel nostro archivio ma non correttamente attribuite dall'azienda.
 
-    private func normalizza(_ testo: String) -> String {
-        let base = testo.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "-", with: "")
-            .replacingOccurrences(of: "_", with: "")
-            .replacingOccurrences(of: ".", with: "")
-        // Compatibilità con le bollette inserite nelle versioni precedenti.
-        if base == "zainimarin" { return "zainimarina" }
-        return base
-    }
+        Non fermarti al semplice confronto dei totali: ricostruisci le corrispondenze tra date e quantità quando è possibile.
 
-    private func quantitaNostreTotali() -> [String: Int] {
-        var result: [String: Int] = [:]
-        for bolletta in archivio.bollette {
-            for lavoro in bolletta.lavorazioni {
-                let q = Int(lavoro.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                guard q > 0 else { continue }
-                result[normalizza(lavoro.nome), default: 0] += q
-            }
-        }
-        return result
-    }
+        Mostra SOLO le incongruenze effettivamente trovate, spiegandole in modo chiaro con data, articolo e quantità coinvolte.
 
-    private func quantitaAziendaTotali() -> [String: Int] {
-        var result: [String: Int] = [:]
-        for giorno in giorniAzienda {
-            for riga in giorno.rows {
-                guard riga.quantity > 0 else { continue }
-                result[normalizza(riga.article), default: 0] += riga.quantity
-            }
-        }
-        return result
-    }
+        Se i dati coincidono, indica chiaramente che il confronto è OK.
 
-    private func confrontoTotale() -> (ok: Bool, nostre: [String: Int], azienda: [String: Int]) {
-        let nostre = quantitaNostreTotali()
-        let azienda = quantitaAziendaTotali()
-        return (nostre == azienda, nostre, azienda)
-    }
+        Infine calcola, quando i dati aziendali lo permettono, il TOTALE MATURATO / FATTURABILE.
 
-    private func coloreData(_ data: Date) -> Color {
-        let nostra = bollettaNostra(per: data) != nil
-        let azienda = giornoAzienda(per: data) != nil
-        return (nostra && azienda) ? .primary : .red
-    }
-
-    private func testoData(_ data: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "dd/MM/yyyy"
-        return formatter.string(from: data)
+        Non modificare i file originali.
+        """
     }
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                let totale = confrontoTotale()
+            VStack(spacing: 18) {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        Text("ANALISI")
+                            .font(.title2.weight(.bold))
+                            .padding(.top, 8)
 
-                if tutteLeDate.isEmpty {
-                    Spacer()
-                    Text("Nessuna bolletta caricata.")
-                        .font(.title3)
-                    Spacer()
-                } else {
-                    ScrollView {
-                        VStack(spacing: 14) {
-                            VStack(spacing: 8) {
-                                Text("CONFRONTO COMPLESSIVO")
+                        Text("Qui trovi i due file da confrontare. Il file delle nostre bollette viene aggiornato automaticamente ogni volta che salvi o modifichi una bolletta.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 8)
+
+                        fileCard(
+                            title: "NOSTRE BOLLETTE",
+                            subtitle: fileNostre?.lastPathComponent ?? "File non ancora creato",
+                            icon: "doc.text.fill",
+                            tint: .purple,
+                            available: fileNostre != nil
+                        )
+
+                        fileCard(
+                            title: "FILE AZIENDA",
+                            subtitle: fileAzienda?.lastPathComponent ?? "Nessun file azienda caricato",
+                            icon: "building.2.fill",
+                            tint: .teal,
+                            available: fileAzienda != nil
+                        )
+
+                        if fileNostre != nil && fileAzienda != nil {
+                            VStack(spacing: 12) {
+                                Image(systemName: "arrow.left.arrow.right.circle.fill")
+                                    .font(.system(size: 38))
+                                    .foregroundColor(.green)
+
+                                Text("PRONTI PER IL CONFRONTO")
                                     .font(.headline)
-                                HStack(spacing: 12) {
-                                    Image(systemName: totale.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                        .font(.system(size: 42, weight: .bold))
-                                        .foregroundColor(totale.ok ? .green : .red)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(totale.ok ? "QUANTITÀ COINCIDONO" : "QUANTITÀ NON COINCIDONO")
-                                            .font(.headline)
-                                        Text("Tutte le bollette caricate confrontate con tutto il file aziendale")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Spacer()
-                                }
 
-                                let totalePezziAzienda = totale.azienda.values.reduce(0, +)
-                                let totalePezziNostri = totale.nostre.values.reduce(0, +)
-                                HStack {
-                                    Text("Nostre: \(totalePezziNostri) pezzi")
-                                    Spacer()
-                                    Text("Azienda: \(totalePezziAzienda) pezzi")
-                                }
-                                .font(.subheadline.weight(.semibold))
+                                Text("Premi il pulsante per inviare insieme i due file e la richiesta di analisi.")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
 
-                                if totale.ok {
-                                    let euro = analysisStore.totaleAzienda()
-                                    HStack {
-                                        Text("TOTALE MATURATO / FATTURABILE")
-                                        Spacer()
-                                        Text(euro, format: .currency(code: "EUR"))
-                                            .font(.title3.weight(.bold))
-                                    }
-                                    .padding(.top, 4)
-                                }
-                            }
-                            .padding(14)
-                            .background(Color.gray.opacity(0.10))
-                            .cornerRadius(14)
-                            .padding(.horizontal, 12)
-
-                            if !totale.ok {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("DIFFERENZE")
+                                Button {
+                                    mostraCondivisione = true
+                                } label: {
+                                    Label("INVIA A CHATGPT PER ANALISI", systemImage: "paperplane.fill")
                                         .font(.headline)
-                                    ForEach(Array(Set(totale.nostre.keys).union(totale.azienda.keys)).sorted(), id: \.self) { articolo in
-                                        let n = totale.nostre[articolo] ?? 0
-                                        let a = totale.azienda[articolo] ?? 0
-                                        if n != a {
-                                            HStack {
-                                                Text(articolo)
-                                                Spacer()
-                                                Text("\(n) / \(a)")
-                                                    .fontWeight(.bold)
-                                                    .foregroundColor(.red)
-                                            }
-                                        }
-                                    }
-                                }
-                                .padding(14)
-                                .background(Color.red.opacity(0.07))
-                                .cornerRadius(14)
-                                .padding(.horizontal, 12)
-                            }
-
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text("DATE CARICATE")
-                                    .font(.headline)
-                                    .padding(.horizontal, 12)
-                                    .padding(.bottom, 8)
-                                ForEach(tutteLeDate, id: \.self) { data in
-                                    HStack {
-                                        Text(testoData(data))
-                                            .foregroundColor(coloreData(data))
-                                        Spacer()
-                                        Image(systemName: bollettaNostra(per: data) != nil ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                            .foregroundColor(bollettaNostra(per: data) != nil ? .green : .red)
-                                        Image(systemName: giornoAzienda(per: data) != nil ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                            .foregroundColor(giornoAzienda(per: data) != nil ? .green : .red)
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        if let nostra = bollettaNostra(per: data) { bollettaDaAprire = nostra }
-                                    }
-                                    Divider()
-                                }
-                            }
-
-                            HStack(spacing: 12) {
-                                Button { analysisStore.salvaTutte() } label: {
-                                    Label("SALVA ANALISI", systemImage: "square.and.arrow.down.fill")
                                         .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 12)
+                                        .padding(.vertical, 15)
                                 }
                                 .buttonStyle(.borderedProminent)
-
-                                Button { analysisStore.richiediReset = true } label: {
-                                    Label("RESET", systemImage: "trash.fill")
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 12)
-                                }
-                                .buttonStyle(.bordered)
+                                .tint(.green)
                             }
-                            .padding(.horizontal, 12)
+                            .padding(16)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.green.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.green.opacity(0.25), lineWidth: 1)
+                            )
+                            .cornerRadius(14)
+                        } else {
+                            VStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundColor(.orange)
+                                Text("Per fare l'analisi servono entrambi i file.")
+                                    .font(.headline)
+                                Text("Inserisci/modifica le nostre bollette e carica il file dell'azienda dal menu dedicato.")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .padding(16)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.orange.opacity(0.08))
+                            .cornerRadius(14)
                         }
-                        .padding(.vertical, 12)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("TESTO INVIATO PER L'ANALISI")
+                                .font(.headline)
+
+                            Text(testoAnalisi)
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(12)
+                                .background(Color.gray.opacity(0.08))
+                                .cornerRadius(10)
+                        }
                     }
+                    .padding(14)
                 }
             }
-            .navigationTitle("Dati analizzati")
+            .navigationTitle("Analisi")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
             }
-            .alert("RESET ANALISI", isPresented: $analysisStore.richiediReset) {
-                Button("ANNULLA", role: .cancel) { }
-                Button("CONFERMA RESET", role: .destructive) {
-                    analysisStore.reset()
+            .sheet(isPresented: $mostraCondivisione) {
+                if let nostro = fileNostre, let azienda = fileAzienda {
+                    CondivisioneAnalisiView(
+                        files: [nostro, azienda],
+                        testo: testoAnalisi
+                    )
                 }
-            } message: {
-                Text("Vuoi cancellare tutte le analisi archiviate? Le bollette inserite nell'app NON verranno cancellate.")
             }
-            .sheet(item: $bollettaDaAprire) { bolletta in
-                NuovaBollettaView(archivio: archivio, bollettaDaModificare: bolletta)
+            .alert("ANALISI", isPresented: Binding(
+                get: { !messaggio.isEmpty },
+                set: { if !$0 { messaggio = "" } }
+            )) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(messaggio)
             }
         }
         .navigationViewStyle(.stack)
     }
+
+    @ViewBuilder
+    private func fileCard(
+        title: String,
+        subtitle: String,
+        icon: String,
+        tint: Color,
+        available: Bool
+    ) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 30))
+                .foregroundColor(available ? tint : .gray)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            Image(systemName: available ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundColor(available ? .green : .red)
+                .font(.title3)
+        }
+        .padding(14)
+        .background(tint.opacity(0.08))
+        .cornerRadius(12)
+    }
 }
 
+struct CondivisioneAnalisiView: UIViewControllerRepresentable {
+    let files: [URL]
+    let testo: String
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(
+            activityItems: files + [testo],
+            applicationActivities: nil
+        )
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) { }
+}
 
 struct ArchivioAnalisiView: View {
     @ObservedObject var analysisStore: PDFAnalysisStore
-    @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
 
     private var gruppiAnno: [(anno: Int, analisi: [PDFAnalysisResult])] {
