@@ -875,9 +875,6 @@ struct DatiAnalizzatiView: View {
     @ObservedObject var analysisStore: PDFAnalysisStore
     @ObservedObject var fileStore: PDFTransferStore
     @Environment(\.presentationMode) private var presentationMode
-    @AppStorage("openai_api_key") private var apiKey = ""
-    @State private var mostraChat = false
-    @State private var mostraAPIKey = false
     @State private var mostraConfrontoManuale = false
 
     private var fileNostre: URL? {
@@ -961,21 +958,6 @@ struct DatiAnalizzatiView: View {
         return f.string(from: date)
     }
 
-    private var testoAnalisi: String {
-        """
-        Analizza questi due file confrontando le nostre bollette con quelle della ditta.
-
-        Controlla date, articoli e quantità. Individua bollette mancanti, date non corrispondenti,
-        pezzi spostati su altre date, articoli mancanti o duplicati e differenze di quantità.
-        Considera anche il caso in cui una bolletta mancante sia stata accorpata alla bolletta
-        successiva o precedente. Non fermarti ai totali: ricostruisci le corrispondenze tra date,
-        articoli e quantità quando possibile.
-
-        Riporta solo le incongruenze effettive, indicando chiaramente data, articolo e quantità.
-        Se tutto coincide, scrivi chiaramente che il confronto è OK. Calcola inoltre, quando i dati
-        aziendali lo permettono, il TOTALE MATURATO / FATTURABILE.
-        """
-    }
 
     var body: some View {
         NavigationView {
@@ -1050,81 +1032,22 @@ struct DatiAnalizzatiView: View {
                             .cornerRadius(14)
                         }
 
-                        fileCard(
-                            title: "NOSTRE BOLLETTE",
-                            subtitle: fileNostre?.lastPathComponent ?? "File non ancora creato",
-                            icon: "doc.text.fill",
-                            tint: .purple,
-                            available: fileNostre != nil
-                        )
-
-                        fileCard(
-                            title: "FILE AZIENDA",
-                            subtitle: fileAzienda?.lastPathComponent ?? "Nessun file azienda caricato",
-                            icon: "building.2.fill",
-                            tint: .teal,
-                            available: fileAzienda != nil
-                        )
-
                         if fileNostre != nil && fileAzienda != nil {
-                            VStack(spacing: 12) {
+                            Button {
+                                mostraConfrontoManuale = true
+                            } label: {
                                 HStack {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.green)
-                                    Text("I DUE FILE SONO PRONTI")
+                                    Image(systemName: "checklist")
+                                    Text("INIZIA CONFRONTO")
                                         .font(.headline)
                                     Spacer()
+                                    Image(systemName: "arrow.right")
                                 }
-
-                                Button {
-                                    mostraChat = true
-                                } label: {
-                                    HStack {
-                                        Image(systemName: "bubble.left.and.bubble.right.fill")
-                                        Text("ANALIZZA CON CHATGPT")
-                                            .font(.headline)
-                                        Spacer()
-                                        Image(systemName: "arrow.right")
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 14)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.green)
-
-                                Button {
-                                    mostraAPIKey = true
-                                } label: {
-                                    Label(apiKey.isEmpty ? "CONFIGURA API KEY" : "MODIFICA API KEY", systemImage: "key.fill")
-                                        .font(.footnote)
-                                }
-                                .buttonStyle(.bordered)
-
-
-                                Button {
-                                    mostraConfrontoManuale = true
-                                } label: {
-                                    HStack {
-                                        Image(systemName: "checklist")
-                                        Text("INIZIA CONFRONTO")
-                                            .font(.headline)
-                                        Spacer()
-                                        Image(systemName: "arrow.right")
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 14)
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.blue)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
                             }
-                            .padding(16)
-                            .frame(maxWidth: .infinity)
-                            .background(Color.green.opacity(0.08))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(Color.green.opacity(0.25), lineWidth: 1)
-                            )
-                            .cornerRadius(14)
+                            .buttonStyle(.borderedProminent)
+                            .tint(.blue)
                         } else {
                             VStack(spacing: 8) {
                                 Image(systemName: "exclamationmark.triangle.fill")
@@ -1151,19 +1074,6 @@ struct DatiAnalizzatiView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
-            }
-            .sheet(isPresented: $mostraChat) {
-                if let nostro = fileNostre, let azienda = fileAzienda {
-                    ChatAnalisiView(
-                        fileNostre: nostro,
-                        fileAzienda: azienda,
-                        testoIniziale: testoAnalisi,
-                        apiKey: apiKey
-                    )
-                }
-            }
-            .sheet(isPresented: $mostraAPIKey) {
-                APIKeyView(apiKey: $apiKey)
             }
             .sheet(isPresented: $mostraConfrontoManuale) {
                 ConfrontoManualeView(archivio: archivio, analysisStore: analysisStore)
