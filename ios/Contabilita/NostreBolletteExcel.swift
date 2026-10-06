@@ -9,45 +9,35 @@ enum NostreBolletteExcel {
         nomiLavorazioni: [String],
         url: URL
     ) throws {
+        var articoli: [String] = []
+        var indice: [String: Int] = [:]
+
         func chiave(_ nome: String) -> String {
             nome.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        // L'ordine delle colonne deve essere sempre quello ufficiale del file aziendale.
-        // Gli eventuali articoli personalizzati vengono aggiunti in coda.
-        let ordineUfficiale = [
-            "GLAM", "GLAM XL", "ESSENTIAL", "CLOSE", "CASE", "TRAINING",
-            "MESSENGER", "BAGPACK", "TODAY", "ACTIVITY", "ZAINI MARINA",
-            "CLASSY", "ZAINO PRO", "case marina", "MONEYFUL",
-            "BORSA IN STOFFA", "PORTAPC"
-        ]
-
-        var articoli = ordineUfficiale
-        var indice: [String: Int] = [:]
-        for (i, nome) in articoli.enumerated() {
-            indice[chiave(nome)] = i
-        }
-
-        // Manteniamo eventuali articoli aggiunti manualmente, senza spostarli
-        // davanti alla sequenza ufficiale.
-        for nome in nomiLavorazioni {
-            let n = nome.trimmingCharacters(in: .whitespacesAndNewlines)
-            let key = chiave(n)
-            guard !n.isEmpty, indice[key] == nil else { continue }
-            indice[key] = articoli.count
-            articoli.append(n)
-        }
-
-        // Se per qualche motivo l'archivio contiene un articolo non presente
-        // in nomiLavorazioni, lo aggiungiamo comunque in coda.
         for bolletta in bollette.sorted(by: { $0.data < $1.data }) {
             for lavoro in bolletta.lavorazioni {
                 let nome = lavoro.nome.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !nome.isEmpty else { continue }
                 let key = chiave(nome)
-                guard !nome.isEmpty, indice[key] == nil else { continue }
+                if indice[key] == nil {
+                    indice[key] = articoli.count
+                    articoli.append(nome)
+                }
+            }
+        }
+
+        // Se l'archivio non contiene ancora lavorazioni, manteniamo comunque
+        // i nomi conosciuti dall'app per rendere il file immediatamente utile.
+        if articoli.isEmpty {
+            for nome in nomiLavorazioni {
+                let n = nome.trimmingCharacters(in: .whitespacesAndNewlines)
+                let key = chiave(n)
+                guard !n.isEmpty, indice[key] == nil else { continue }
                 indice[key] = articoli.count
-                articoli.append(nome)
+                articoli.append(n)
             }
         }
 

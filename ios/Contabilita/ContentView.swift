@@ -144,6 +144,24 @@ struct ContentView: View {
     @State private var mostraPDF = false
     @State private var pdfImportati = 0
 
+    private func apriChatGPT() {
+        // Il testo viene copiato negli appunti così, una volta aperta ChatGPT,
+        // è già pronto per essere incollato nella nuova conversazione.
+        UIPasteboard.general.string = testoAnalisi
+
+        // Prova prima lo schema dell'app; se non è disponibile usa il link
+        // universale ufficiale di ChatGPT.
+        if let appURL = URL(string: "chatgpt://") {
+            UIApplication.shared.open(appURL, options: [:]) { success in
+                if !success, let webURL = URL(string: "https://chatgpt.com/") {
+                    UIApplication.shared.open(webURL)
+                }
+            }
+        } else if let webURL = URL(string: "https://chatgpt.com/") {
+            UIApplication.shared.open(webURL)
+        }
+    }
+
     var body: some View {
         NavigationView {
             VStack(spacing: 16) {
@@ -379,39 +397,14 @@ struct GruppoLavorazione: Identifiable {
     var voci: [VoceLavorazione]
 }
 
-/// Ordine ufficiale degli articoli, identico alle colonne del file Excel aziendale.
-/// Questa sequenza viene usata sia in NUOVA BOLLETTA sia in MODIFICA BOLLETTA.
-let ordineArticoliAzienda: [String] = [
-    "GLAM",
-    "GLAM XL",
-    "ESSENTIAL",
-    "CLOSE",
-    "CASE",
-    "TRAINING",
-    "MESSENGER",
-    "BAGPACK",
-    "TODAY",
-    "ACTIVITY",
-    "ZAINI MARINA",
-    "CLASSY",
-    "ZAINO PRO",
-    "case marina",
-    "MONEYFUL",
-    "BORSA IN STOFFA",
-    "PORTAPC"
-]
-
-func normalizzaArticolo(_ nome: String) -> String {
-    nome.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .replacingOccurrences(of: " ", with: "")
-        .replacingOccurrences(of: "-", with: "")
-}
-
 func gruppiBollettaDaNomi() -> [GruppoLavorazione] {
-    return ordineArticoliAzienda.map {
-        GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")])
-    }
+    // Ordine e nomi presi direttamente dal file Excel aziendale.
+    let articoli = [
+        "MESSENGER", "BAGPACK", "TODAY", "ACTIVITY", "ZAINI MARIN",
+        "CLASSY", "ZAINO PRO", "case marina", "MONEYFUL",
+        "BORSA IN STOFFA", "PORTAPC"
+    ]
+    return articoli.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) }
 }
 
 struct NuovaBollettaView: View {
@@ -471,8 +464,8 @@ struct NuovaBollettaView: View {
             _gruppi = State(initialValue: gruppiIniziali)
         } else {
             var iniziali = gruppiBollettaDaNomi()
-            let standard = Set(ordineArticoliAzienda.map { normalizzaArticolo($0) })
-            let personalizzati = archivio.nomiLavorazioni.filter { !standard.contains(normalizzaArticolo($0)) }
+            let standard = Set(iniziali.map { $0.nome.lowercased() })
+            let personalizzati = archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }
             iniziali.append(contentsOf: personalizzati.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
             _gruppi = State(initialValue: iniziali)
         }
@@ -545,8 +538,8 @@ struct NuovaBollettaView: View {
         .onAppear {
             if gruppi.isEmpty && bollettaDaModificare == nil {
                 gruppi = gruppiBollettaDaNomi()
-                let standard = Set(ordineArticoliAzienda.map { normalizzaArticolo($0) })
-                gruppi.append(contentsOf: archivio.nomiLavorazioni.filter { !standard.contains(normalizzaArticolo($0)) }.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
+                let standard = Set(gruppi.map { $0.nome.lowercased() })
+                gruppi.append(contentsOf: archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
             }
         }
     }
@@ -899,7 +892,6 @@ struct DatiAnalizzatiView: View {
     @ObservedObject var analysisStore: PDFAnalysisStore
     @ObservedObject var fileStore: PDFTransferStore
     @Environment(\.presentationMode) private var presentationMode
-    @State private var mostraCondivisione = false
     @State private var messaggio = ""
 
     private var fileNostre: URL? {
@@ -980,13 +972,13 @@ struct DatiAnalizzatiView: View {
                                 Text("PRONTI PER IL CONFRONTO")
                                     .font(.headline)
 
-                                Text("I due file e il testo dell'analisi sono già preparati. Premi per passarli a ChatGPT tramite la condivisione di iPad.")
+                                Text("I due file sono pronti. Premi per aprire direttamente ChatGPT con il testo dell'analisi già copiato.")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                                     .multilineTextAlignment(.center)
 
                                 Button {
-                                    mostraCondivisione = true
+                                    apriChatGPT()
                                 } label: {
                                     Label("PASSA A CHATGPT PER ANALISI", systemImage: "paperplane.fill")
                                         .font(.headline)
@@ -1042,14 +1034,6 @@ struct DatiAnalizzatiView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
-                }
-            }
-            .sheet(isPresented: $mostraCondivisione) {
-                if let nostro = fileNostre, let azienda = fileAzienda {
-                    CondivisioneAnalisiView(
-                        files: [nostro, azienda],
-                        testo: testoAnalisi
-                    )
                 }
             }
             .alert("ANALISI", isPresented: Binding(
