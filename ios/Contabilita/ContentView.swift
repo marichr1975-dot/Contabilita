@@ -1,4 +1,29 @@
 import SwiftUI
+
+private let testoAnalisiChatGPT = """
+ANALIZZA QUESTI DUE FILE.
+
+Il primo file (NOSTRE_BOLLETTE.xlsx) contiene le bollette inserite manualmente da noi, con date, articoli e quantità.
+Il secondo file è il prospetto ricevuto dall'azienda.
+
+Confronta i due file in modo intelligente, verificando:
+1. date delle bollette;
+2. articoli;
+3. quantità dei pezzi;
+4. eventuali bollette presenti da una parte e mancanti dall'altra;
+5. casi in cui una bolletta mancante nel file aziendale sia stata eventualmente accorpata nella bolletta/data successiva;
+6. casi inversi, cioè quantità presenti nel nostro archivio ma non correttamente attribuite dall'azienda.
+
+Non fermarti al semplice confronto dei totali: ricostruisci le corrispondenze tra date e quantità quando è possibile.
+
+Mostra SOLO le incongruenze effettivamente trovate, spiegandole in modo chiaro con data, articolo e quantità coinvolte.
+
+Se i dati coincidono, indica chiaramente che il confronto è OK.
+
+Infine calcola, quando i dati aziendali lo permettono, il TOTALE MATURATO / FATTURABILE.
+
+Non modificare i file originali.
+"""
 import PDFKit
 
 extension URL: Identifiable {
@@ -147,7 +172,7 @@ struct ContentView: View {
     private func apriChatGPT() {
         // Il testo viene copiato negli appunti così, una volta aperta ChatGPT,
         // è già pronto per essere incollato nella nuova conversazione.
-        UIPasteboard.general.string = testoAnalisi
+        UIPasteboard.general.string = testoAnalisiChatGPT
 
         // Prova prima lo schema dell'app; se non è disponibile usa il link
         // universale ufficiale di ChatGPT.
