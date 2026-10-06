@@ -876,8 +876,7 @@ struct DatiAnalizzatiView: View {
     @ObservedObject var fileStore: PDFTransferStore
     @Environment(\.presentationMode) private var presentationMode
     @State private var mostraConfrontoManuale = false
-    @State private var txtDiagnosticoURL: URL?
-    @State private var mostraTXTDiagnostico = false
+    @State private var txtDaCondividere: URL?
 
     private var fileNostre: URL? {
         guard !archivio.bollette.isEmpty else { return nil }
@@ -966,7 +965,7 @@ struct DatiAnalizzatiView: View {
 
 
     var body: some View {
-        NavigationView {
+        AnyView(NavigationView {
             VStack(spacing: 12) {
                 ScrollView {
                     VStack(spacing: 14) {
@@ -979,27 +978,6 @@ struct DatiAnalizzatiView: View {
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 8)
-
-                        Button {
-                            do {
-                                txtDiagnosticoURL = try AnalisiTXTExporter.creaTXT(archivio: archivio, analysisStore: analysisStore, fileAzienda: fileAzienda)
-                                mostraTXTDiagnostico = true
-                            } catch {
-                                print("Errore creazione TXT diagnostico: \(error)")
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: "doc.text.magnifyingglass")
-                                Text("ESTRAI TXT")
-                                    .font(.headline)
-                                Spacer()
-                                Image(systemName: "square.and.arrow.up")
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 13)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.purple)
 
                         if fileNostre != nil && fileAzienda != nil && !analysisStore.giorniAzienda().isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
@@ -1061,6 +1039,24 @@ struct DatiAnalizzatiView: View {
 
                         if fileNostre != nil && fileAzienda != nil {
                             Button {
+                                if let url = AnalisiTXTExporter.creaTXT(archivio: archivio, analysisStore: analysisStore, fileStore: fileStore) {
+                                    txtDaCondividere = url
+                                }
+                            } label: {
+                                HStack {
+                                    Image(systemName: "doc.text")
+                                    Text("ESTRAI TXT")
+                                        .font(.headline)
+                                    Spacer()
+                                    Image(systemName: "square.and.arrow.up")
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(.teal)
+
+                            Button {
                                 mostraConfrontoManuale = true
                             } label: {
                                 HStack {
@@ -1105,13 +1101,12 @@ struct DatiAnalizzatiView: View {
             .sheet(isPresented: $mostraConfrontoManuale) {
                 ConfrontoManualeView(archivio: archivio, analysisStore: analysisStore)
             }
-            .sheet(isPresented: $mostraTXTDiagnostico) {
-                if let url = txtDiagnosticoURL {
-                    TXTShareSheet(url: url)
-                }
+            .sheet(item: $txtDaCondividere) { url in
+                TXTShareSheet(url: url)
             }
         }
         .navigationViewStyle(.stack)
+        })
     }
 
     @ViewBuilder
