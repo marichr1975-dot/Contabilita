@@ -878,7 +878,10 @@ struct DatiAnalizzatiView: View {
     @State private var messaggio = ""
 
     private var fileNostre: URL? {
-        archivio.fileNostreBollette()
+        // Il file tecnico può esistere anche a archivio vuoto: per l'ANALISI
+        // deve risultare disponibile solo quando esiste almeno una bolletta reale.
+        guard !archivio.bollette.isEmpty else { return nil }
+        return archivio.fileNostreBollette()
     }
 
     private var fileAzienda: URL? {
@@ -952,7 +955,7 @@ struct DatiAnalizzatiView: View {
                                 Text("PRONTI PER IL CONFRONTO")
                                     .font(.headline)
 
-                                Text("Premi il pulsante per inviare insieme i due file e la richiesta di analisi.")
+                                Text("I due file e il testo dell'analisi sono già preparati. Premi per passarli a ChatGPT tramite la condivisione di iPad.")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                                     .multilineTextAlignment(.center)
@@ -960,7 +963,7 @@ struct DatiAnalizzatiView: View {
                                 Button {
                                     mostraCondivisione = true
                                 } label: {
-                                    Label("INVIA A CHATGPT PER ANALISI", systemImage: "paperplane.fill")
+                                    Label("PASSA A CHATGPT PER ANALISI", systemImage: "paperplane.fill")
                                         .font(.headline)
                                         .frame(maxWidth: .infinity)
                                         .padding(.vertical, 15)
@@ -1079,6 +1082,15 @@ struct CondivisioneAnalisiView: UIViewControllerRepresentable {
             activityItems: files + [testo],
             applicationActivities: nil
         )
+        // Lasciamo disponibili le estensioni/app (in particolare ChatGPT),
+        // ma togliamo azioni che non servono al trasferimento dell'analisi.
+        controller.excludedActivityTypes = [
+            .assignToContact,
+            .addToReadingList,
+            .markupAsPDF,
+            .print,
+            .saveToCameraRoll
+        ]
         return controller
     }
 
