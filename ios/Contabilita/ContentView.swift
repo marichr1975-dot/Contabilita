@@ -1,39 +1,5 @@
 import SwiftUI
 import UIKit
-
-private func apriChatGPT() {
-    UIPasteboard.general.string = testoAnalisiChatGPT
-    if let appURL = URL(string: "chatgpt://"), UIApplication.shared.canOpenURL(appURL) {
-        UIApplication.shared.open(appURL)
-    } else if let webURL = URL(string: "https://chatgpt.com/") {
-        UIApplication.shared.open(webURL)
-    }
-}
-
-private let testoAnalisiChatGPT = """
-ANALIZZA QUESTI DUE FILE.
-
-Il primo file (NOSTRE_BOLLETTE.xlsx) contiene le bollette inserite manualmente da noi, con date, articoli e quantità.
-Il secondo file è il prospetto ricevuto dall'azienda.
-
-Confronta i due file in modo intelligente, verificando:
-1. date delle bollette;
-2. articoli;
-3. quantità dei pezzi;
-4. eventuali bollette presenti da una parte e mancanti dall'altra;
-5. casi in cui una bolletta mancante nel file aziendale sia stata eventualmente accorpata nella bolletta/data successiva;
-6. casi inversi, cioè quantità presenti nel nostro archivio ma non correttamente attribuite dall'azienda.
-
-Non fermarti al semplice confronto dei totali: ricostruisci le corrispondenze tra date e quantità quando è possibile.
-
-Mostra SOLO le incongruenze effettivamente trovate, spiegandole in modo chiaro con data, articolo e quantità coinvolte.
-
-Se i dati coincidono, indica chiaramente che il confronto è OK.
-
-Infine calcola, quando i dati aziendali lo permettono, il TOTALE MATURATO / FATTURABILE.
-
-Non modificare i file originali.
-"""
 import PDFKit
 
 extension URL: Identifiable {
@@ -910,6 +876,7 @@ struct DatiAnalizzatiView: View {
     @ObservedObject var fileStore: PDFTransferStore
     @Environment(\.presentationMode) private var presentationMode
     @State private var messaggio = ""
+    @State private var mostraCondivisione = false
 
     private var fileNostre: URL? {
         // Il file tecnico può esistere anche a archivio vuoto: per l'ANALISI
@@ -989,13 +956,13 @@ struct DatiAnalizzatiView: View {
                                 Text("PRONTI PER IL CONFRONTO")
                                     .font(.headline)
 
-                                Text("I due file sono pronti. Premi per aprire direttamente ChatGPT con il testo dell'analisi già copiato.")
+                                Text("I due file e il testo dell'analisi sono pronti. Premi per passarli alle app disponibili, compresa ChatGPT.")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                                     .multilineTextAlignment(.center)
 
                                 Button {
-                                    apriChatGPT()
+                                    mostraCondivisione = true
                                 } label: {
                                     Label("PASSA A CHATGPT PER ANALISI", systemImage: "paperplane.fill")
                                         .font(.headline)
@@ -1060,6 +1027,12 @@ struct DatiAnalizzatiView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(messaggio)
+            }
+        }
+        .sheet(isPresented: $mostraCondivisione) {
+            if let nostro = fileNostre, let azienda = fileAzienda {
+                CondivisioneAnalisiView(files: [nostro, azienda], testo: testoAnalisi)
+                    .ignoresSafeArea()
             }
         }
         .navigationViewStyle(.stack)
