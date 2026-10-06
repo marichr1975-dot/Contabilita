@@ -1173,9 +1173,8 @@ private struct ChatAnalisiView: View {
 
                 Divider()
                 HStack(alignment: .bottom, spacing: 8) {
-                    TextField("Scrivi una domanda...", text: $testo, axis: .vertical)
+                    TextField("Scrivi una domanda...", text: $testo)
                         .textFieldStyle(.roundedBorder)
-                        .lineLimit(1...5)
 
                     Button {
                         invia()

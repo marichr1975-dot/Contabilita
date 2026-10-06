@@ -57,7 +57,7 @@ final class OpenAIAnalysisService {
         }
 
         var payload: [String: Any] = [
-            "model": "gpt-6-luna",
+            "model": "gpt-5.4",
             "input": [[
                 "role": "user",
                 "content": content
