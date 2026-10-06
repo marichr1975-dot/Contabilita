@@ -79,7 +79,7 @@ final class OpenAIAnalysisService {
         try validate(response: response, data: responseData)
 
         let decoded = try JSONDecoder().decode(OpenAIResponse.self, from: responseData)
-        let text = decoded.outputText ?? extractOutputText(from: responseData)
+        let text = decoded.outputText ?? extractOutputText(from: responseData) ?? ""
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw OpenAIAPIError(message: "ChatGPT ha restituito una risposta vuota.")
         }
