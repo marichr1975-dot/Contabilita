@@ -1,3 +1,1 @@
-# Codice applicazione
-
-Qui verrà inserito il codice della prima versione dell'app.
+Contabilita - progetto Flutter/archivio originale. La versione iOS contiene l'analisi ChatGPT integrata.

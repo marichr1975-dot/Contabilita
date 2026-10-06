@@ -875,12 +875,11 @@ struct DatiAnalizzatiView: View {
     @ObservedObject var analysisStore: PDFAnalysisStore
     @ObservedObject var fileStore: PDFTransferStore
     @Environment(\.presentationMode) private var presentationMode
-    @State private var messaggio = ""
-    @State private var mostraCondivisione = false
+    @AppStorage("openai_api_key") private var apiKey = ""
+    @State private var mostraChat = false
+    @State private var mostraAPIKey = false
 
     private var fileNostre: URL? {
-        // Il file tecnico può esistere anche a archivio vuoto: per l'ANALISI
-        // deve risultare disponibile solo quando esiste almeno una bolletta reale.
         guard !archivio.bollette.isEmpty else { return nil }
         return archivio.fileNostreBollette()
     }
@@ -891,41 +890,30 @@ struct DatiAnalizzatiView: View {
 
     private var testoAnalisi: String {
         """
-        ANALIZZA QUESTI DUE FILE.
+        Analizza questi due file confrontando le nostre bollette con quelle della ditta.
 
-        Il primo file (NOSTRE_BOLLETTE.xlsx) contiene le bollette inserite manualmente da noi, con date, articoli e quantità.
-        Il secondo file è il prospetto ricevuto dall'azienda.
+        Controlla date, articoli e quantità. Individua bollette mancanti, date non corrispondenti,
+        pezzi spostati su altre date, articoli mancanti o duplicati e differenze di quantità.
+        Considera anche il caso in cui una bolletta mancante sia stata accorpata alla bolletta
+        successiva o precedente. Non fermarti ai totali: ricostruisci le corrispondenze tra date,
+        articoli e quantità quando possibile.
 
-        Confronta i due file in modo intelligente, verificando:
-        1. date delle bollette;
-        2. articoli;
-        3. quantità dei pezzi;
-        4. eventuali bollette presenti da una parte e mancanti dall'altra;
-        5. casi in cui una bolletta mancante nel file aziendale sia stata eventualmente accorpata nella bolletta/data successiva;
-        6. casi inversi, cioè quantità presenti nel nostro archivio ma non correttamente attribuite dall'azienda.
-
-        Non fermarti al semplice confronto dei totali: ricostruisci le corrispondenze tra date e quantità quando è possibile.
-
-        Mostra SOLO le incongruenze effettivamente trovate, spiegandole in modo chiaro con data, articolo e quantità coinvolte.
-
-        Se i dati coincidono, indica chiaramente che il confronto è OK.
-
-        Infine calcola, quando i dati aziendali lo permettono, il TOTALE MATURATO / FATTURABILE.
-
-        Non modificare i file originali.
+        Riporta solo le incongruenze effettive, indicando chiaramente data, articolo e quantità.
+        Se tutto coincide, scrivi chiaramente che il confronto è OK. Calcola inoltre, quando i dati
+        aziendali lo permettono, il TOTALE MATURATO / FATTURABILE.
         """
     }
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 18) {
+            VStack(spacing: 12) {
                 ScrollView {
-                    VStack(spacing: 16) {
+                    VStack(spacing: 14) {
                         Text("ANALISI")
                             .font(.title2.weight(.bold))
                             .padding(.top, 8)
 
-                        Text("Qui trovi i due file da confrontare. Il file delle nostre bollette viene aggiornato automaticamente ogni volta che salvi o modifichi una bolletta.")
+                        Text("I due file vengono letti direttamente dall'app e analizzati nella chat qui sotto.")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -949,28 +937,37 @@ struct DatiAnalizzatiView: View {
 
                         if fileNostre != nil && fileAzienda != nil {
                             VStack(spacing: 12) {
-                                Image(systemName: "arrow.left.arrow.right.circle.fill")
-                                    .font(.system(size: 38))
-                                    .foregroundColor(.green)
-
-                                Text("PRONTI PER IL CONFRONTO")
-                                    .font(.headline)
-
-                                Text("I due file e il testo dell'analisi sono pronti. Premi per passarli alle app disponibili, compresa ChatGPT.")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
+                                HStack {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                    Text("I DUE FILE SONO PRONTI")
+                                        .font(.headline)
+                                    Spacer()
+                                }
 
                                 Button {
-                                    mostraCondivisione = true
+                                    mostraChat = true
                                 } label: {
-                                    Label("PASSA A CHATGPT PER ANALISI", systemImage: "paperplane.fill")
-                                        .font(.headline)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 15)
+                                    HStack {
+                                        Image(systemName: "bubble.left.and.bubble.right.fill")
+                                        Text("ANALIZZA CON CHATGPT")
+                                            .font(.headline)
+                                        Spacer()
+                                        Image(systemName: "arrow.right")
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 14)
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(.green)
+
+                                Button {
+                                    mostraAPIKey = true
+                                } label: {
+                                    Label(apiKey.isEmpty ? "CONFIGURA API KEY" : "MODIFICA API KEY", systemImage: "key.fill")
+                                        .font(.footnote)
+                                }
+                                .buttonStyle(.bordered)
                             }
                             .padding(16)
                             .frame(maxWidth: .infinity)
@@ -996,19 +993,6 @@ struct DatiAnalizzatiView: View {
                             .background(Color.orange.opacity(0.08))
                             .cornerRadius(14)
                         }
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("TESTO INVIATO PER L'ANALISI")
-                                .font(.headline)
-
-                            Text(testoAnalisi)
-                                .font(.footnote)
-                                .foregroundColor(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(12)
-                                .background(Color.gray.opacity(0.08))
-                                .cornerRadius(10)
-                        }
                     }
                     .padding(14)
                 }
@@ -1020,19 +1004,18 @@ struct DatiAnalizzatiView: View {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
             }
-            .alert("ANALISI", isPresented: Binding(
-                get: { !messaggio.isEmpty },
-                set: { if !$0 { messaggio = "" } }
-            )) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(messaggio)
+            .sheet(isPresented: $mostraChat) {
+                if let nostro = fileNostre, let azienda = fileAzienda {
+                    ChatAnalisiView(
+                        fileNostre: nostro,
+                        fileAzienda: azienda,
+                        testoIniziale: testoAnalisi,
+                        apiKey: apiKey
+                    )
+                }
             }
-        }
-        .sheet(isPresented: $mostraCondivisione) {
-            if let nostro = fileNostre, let azienda = fileAzienda {
-                CondivisioneAnalisiView(files: [nostro, azienda], testo: testoAnalisi)
-                    .ignoresSafeArea()
+            .sheet(isPresented: $mostraAPIKey) {
+                APIKeyView(apiKey: $apiKey)
             }
         }
         .navigationViewStyle(.stack)
@@ -1052,16 +1035,13 @@ struct DatiAnalizzatiView: View {
                 .foregroundColor(available ? tint : .gray)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
+                Text(title).font(.headline)
                 Text(subtitle)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .lineLimit(2)
             }
-
             Spacer()
-
             Image(systemName: available ? "checkmark.circle.fill" : "xmark.circle.fill")
                 .foregroundColor(available ? .green : .red)
                 .font(.title3)
@@ -1072,28 +1052,204 @@ struct DatiAnalizzatiView: View {
     }
 }
 
-struct CondivisioneAnalisiView: UIViewControllerRepresentable {
-    let files: [URL]
-    let testo: String
+private struct APIKeyView: View {
+    @Binding var apiKey: String
+    @Environment(\.presentationMode) private var presentationMode
+    @State private var valore = ""
 
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = UIActivityViewController(
-            activityItems: files + [testo],
-            applicationActivities: nil
-        )
-        // Lasciamo disponibili le estensioni/app (in particolare ChatGPT),
-        // ma togliamo azioni che non servono al trasferimento dell'analisi.
-        controller.excludedActivityTypes = [
-            .assignToContact,
-            .addToReadingList,
-            .markupAsPDF,
-            .print,
-            .saveToCameraRoll
-        ]
-        return controller
+    var body: some View {
+        NavigationView {
+            Form {
+                Section {
+                    SecureField("sk-...", text: $valore)
+                    Button("Salva") {
+                        apiKey = valore.trimmingCharacters(in: .whitespacesAndNewlines)
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                    .disabled(valore.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                } header: {
+                    Text("API KEY OPENAI")
+                } footer: {
+                    Text("La chiave viene salvata solo nell'app su questo iPad. L'uso dell'API viene addebitato separatamente secondo il tuo account API OpenAI.")
+                }
+
+                if !apiKey.isEmpty {
+                    Section {
+                        Button("Rimuovi API key", role: .destructive) {
+                            apiKey = ""
+                            presentationMode.wrappedValue.dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle("ChatGPT")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
+                }
+            }
+            .onAppear { valore = apiKey }
+        }
+    }
+}
+
+private struct ChatMessaggio: Identifiable {
+    let id = UUID()
+    let testo: String
+    let utente: Bool
+}
+
+private struct ChatAnalisiView: View {
+    let fileNostre: URL
+    let fileAzienda: URL
+    let testoIniziale: String
+    let apiKey: String
+
+    @Environment(\.presentationMode) private var presentationMode
+    @State private var messaggi: [ChatMessaggio] = []
+    @State private var testo = ""
+    @State private var inCorso = false
+    @State private var errore = ""
+    @State private var fileIDs: [String] = []
+    @State private var previousResponseID: String?
+    @State private var avviata = false
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "brain.head.profile")
+                                    .font(.title2)
+                                    .foregroundColor(.green)
+                                VStack(alignment: .leading) {
+                                    Text("ChatGPT").font(.headline)
+                                    Text("Analisi delle due bollette").font(.caption).foregroundColor(.secondary)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal)
+                            .padding(.top, 12)
+
+                            HStack(spacing: 8) {
+                                Label(fileNostre.lastPathComponent, systemImage: "doc.text")
+                                Label(fileAzienda.lastPathComponent, systemImage: "building.2")
+                            }
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal)
+
+                            ForEach(messaggi) { messaggio in
+                                HStack {
+                                    if messaggio.utente { Spacer() }
+                                    Text(messaggio.testo)
+                                        .padding(12)
+                                        .background(messaggio.utente ? Color.blue.opacity(0.12) : Color.gray.opacity(0.12))
+                                        .cornerRadius(14)
+                                        .frame(maxWidth: 330, alignment: messaggio.utente ? .trailing : .leading)
+                                    if !messaggio.utente { Spacer() }
+                                }
+                                .id(messaggio.id)
+                            }
+
+                            if inCorso {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                    Text("Sto analizzando...").foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal)
+                                .id("loading")
+                            }
+                        }
+                        .padding(.bottom, 16)
+                    }
+                    .onChange(of: messaggi.count) { _ in
+                        if let id = messaggi.last?.id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
+                    }
+                }
+
+                Divider()
+                HStack(alignment: .bottom, spacing: 8) {
+                    TextField("Scrivi una domanda...", text: $testo, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(1...5)
+
+                    Button {
+                        invia()
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 34))
+                    }
+                    .disabled(inCorso || testo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding(10)
+                .background(.thinMaterial)
+            }
+            .navigationTitle("Analisi ChatGPT")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
+                }
+            }
+            .alert("ChatGPT", isPresented: Binding(
+                get: { !errore.isEmpty },
+                set: { if !$0 { errore = "" } }
+            )) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errore)
+            }
+            .onAppear {
+                guard !avviata else { return }
+                avviata = true
+                invia(testoIniziale)
+            }
+        }
+        .navigationViewStyle(.stack)
     }
 
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) { }
+    private func invia(_ testoDaInviare: String? = nil) {
+        let domanda = (testoDaInviare ?? testo).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !domanda.isEmpty, !inCorso else { return }
+        if testoDaInviare == nil { testo = "" }
+        messaggi.append(ChatMessaggio(testo: domanda, utente: true))
+        inCorso = true
+
+        Task {
+            do {
+                guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw OpenAIAPIError(message: "Manca la API key OpenAI. Torna in ANALISI e premi CONFIGURA API KEY.")
+                }
+
+                if fileIDs.isEmpty {
+                    let id1 = try await OpenAIAnalysisService.shared.uploadFile(url: fileNostre, apiKey: apiKey)
+                    let id2 = try await OpenAIAnalysisService.shared.uploadFile(url: fileAzienda, apiKey: apiKey)
+                    fileIDs = [id1, id2]
+                }
+
+                let result = try await OpenAIAnalysisService.shared.respond(
+                    apiKey: apiKey,
+                    prompt: domanda,
+                    fileIDs: fileIDs,
+                    previousResponseID: previousResponseID
+                )
+                previousResponseID = result.id
+                await MainActor.run {
+                    messaggi.append(ChatMessaggio(testo: result.text, utente: false))
+                    inCorso = false
+                }
+            } catch {
+                await MainActor.run {
+                    inCorso = false
+                    errore = error.localizedDescription
+                }
+            }
+        }
+    }
 }
 
 struct ArchivioAnalisiView: View {
