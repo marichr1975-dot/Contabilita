@@ -1125,6 +1125,51 @@ struct ConfrontoManualeView: View {
         giornoAzienda?.rows.reduce(0) { $0 + $1.quantity } ?? 0
     }
 
+    // Ordine IDENTICO alle colonne del file Excel della ditta.
+    private let ordineArticoliDitta: [String] = [
+        "GLAM", "GLAM XL", "ESSENTIAL", "CLOSE", "CASE", "TRAINING",
+        "MESSENGER", "BAGPACK", "TODAY", "ACTIVITY", "ZAINI MARINA",
+        "CLASSY", "ZAINO PRO", "case marina", "MONEYFUL",
+        "BORSA IN STOFFA", "PORTAPC"
+    ]
+
+    private func articoloRiepilogo(_ nome: String) -> String? {
+        let n = normalizza(nome)
+        if n.hasPrefix("classy") { return "CLASSY" }
+        if n.hasPrefix("messenger") { return "MESSENGER" }
+        if n.hasPrefix("bagpack") { return "BAGPACK" }
+        if n == "case" { return "CASE" }
+        return ordineArticoliDitta.first { normalizza($0) == n }
+    }
+
+    private var righeConfrontoArticoli: [(nome: String, nostre: Int, azienda: Int)] {
+        var nostre: [String: Int] = [:]
+        var azienda: [String: Int] = [:]
+
+        if let data = giornoCorrente {
+            for b in archivio.bollette where calendario.isDate(b.data, inSameDayAs: data) {
+                for l in b.lavorazioni {
+                    guard let nome = articoloRiepilogo(l.nome) else { continue }
+                    let q = Int(l.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+                    if q > 0 { nostre[nome, default: 0] += q }
+                }
+            }
+            for day in analysisStore.giorniAzienda() where calendario.isDate(day.date, inSameDayAs: data) {
+                for row in day.rows {
+                    guard let nome = articoloRiepilogo(row.article) else { continue }
+                    azienda[nome, default: 0] += row.quantity
+                }
+            }
+        }
+
+        return ordineArticoliDitta.compactMap { nome in
+            let n = nostre[nome, default: 0]
+            let a = azienda[nome, default: 0]
+            guard n != 0 || a != 0 else { return nil }
+            return (nome, n, a)
+        }
+    }
+
     private var checkRapidoOK: Bool {
         let nostre = aggregaNostre(laData: giornoCorrente)
         let azienda = aggregaAzienda(laData: giornoCorrente)
@@ -1264,35 +1309,35 @@ struct ConfrontoManualeView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundColor(.blue)
 
-                        // Una sola riga: DATA + ARTICOLO + Q.TÀ.
-                        // La riga scorre orizzontalmente quando gli articoli sono molti.
-                        ScrollView(.horizontal, showsIndicators: true) {
-                            HStack(spacing: 10) {
-                                cella("DATA", formatData(data), larghezza: 92)
-                                ForEach(righeDaMostrare) { lavoro in
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text(lavoro.nome)
-                                            .font(.subheadline.weight(.semibold))
-                                            .lineLimit(2)
-                                        Text(lavoro.quantita)
-                                            .font(.title3.weight(.bold))
-                                    }
-                                    .frame(width: 125, alignment: .leading)
-                                    .padding(10)
-                                    .background(Color.blue.opacity(0.08))
-                                    .cornerRadius(10)
+                        // Articoli nell'ESATTO ordine del file Excel della ditta.
+                        // CLASSY e MESSENGER sono aggregati: le varianti della maschera
+                        // (taglie/manici) confluiscono in un unico totale.
+                        ScrollView {
+                            VStack(spacing: 8) {
+                                HStack {
+                                    Text("ARTICOLO").frame(maxWidth: .infinity, alignment: .leading)
+                                    Text("BOLLETTE").frame(width: 82, alignment: .trailing)
+                                    Text("DITTA").frame(width: 72, alignment: .trailing)
                                 }
-                                if righeDaMostrare.isEmpty {
-                                    VStack(alignment: .leading) {
-                                        Text("NESSUNA BOLLETTA")
-                                            .font(.subheadline.weight(.bold))
-                                        Text("Data assente nelle nostre bollette")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(.secondary)
+
+                                ForEach(Array(righeConfrontoArticoli.enumerated()), id: \.offset) { _, riga in
+                                    let diverso = riga.nostre != riga.azienda
+                                    HStack {
+                                        Text(riga.nome)
+                                            .font(.subheadline.weight(.semibold))
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        Text("\(riga.nostre)")
+                                            .font(.headline.weight(.bold))
+                                            .frame(width: 82, alignment: .trailing)
+                                        Text("\(riga.azienda)")
+                                            .font(.headline.weight(.bold))
+                                            .frame(width: 72, alignment: .trailing)
                                     }
-                                    .frame(width: 220, alignment: .leading)
-                                    .padding(10)
-                                    .background(Color.red.opacity(0.08))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                                    .background(diverso ? Color.red.opacity(0.22) : Color.blue.opacity(0.08))
                                     .cornerRadius(10)
                                 }
                             }
