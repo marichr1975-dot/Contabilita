@@ -301,6 +301,8 @@ struct PDFImportatiView: View {
                                     .foregroundColor(.secondary)
                             }
                             Button("CANCELLA") {
+                                // Cancella sia il file azienda sia la relativa analisi.
+                                analysisStore.eliminaAnalisi(fileName: file.lastPathComponent)
                                 store.elimina(file: file)
                             }
                             .buttonStyle(.bordered)
@@ -942,14 +944,38 @@ struct DatiAnalizzatiView: View {
         }
     }
 
+    // Nel totale delle NOSTRE BOLLETTE contiamo esclusivamente le caselle
+    // della maschera standard. Gli articoli scritti manualmente nello spazio
+    // inferiore della bolletta NON entrano nel confronto: quelli vengono
+    // gestiti manualmente.
     private var quickTotalOur: Int {
-        archivio.bollette.reduce(0) { p, b in
-            p + b.lavorazioni.reduce(0) { $0 + (Int($1.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) }
+        let standard = Set([
+            "CLASSY manici corti", "CLASSY manici corto e tracolla",
+            "BAGPACK L", "BAGPACK M", "BAGPACK S",
+            "TRAINING L", "TRAINING M",
+            "MESSENGER L", "MESSENGER M",
+            "TODAY M", "TODAY S",
+            "BAGPACK PRO", "ACTIVITY",
+            "MONEYFUL L", "MONEYFUL M",
+            "CASE L", "CASE M", "CASE S", "ESSENTIAL"
+        ].map { quickName($0) })
+        return archivio.bollette.reduce(0) { totale, bolletta in
+            totale + bolletta.lavorazioni.reduce(0) { parziale, lavoro in
+                let nome = quickName(lavoro.nome)
+                guard standard.contains(nome) else { return parziale }
+                let q = Int(lavoro.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+                return parziale + max(0, q)
+            }
         }
     }
 
+    // Nel FILE AZIENDA vengono sommate tutte le quantità presenti nelle
+    // colonne articolo dell'Excel. La colonna TOTALE PEZZI è già esclusa
+    // dall'analisi Excel, quindi non viene contata due volte.
     private var quickTotalCompany: Int {
-        analysisStore.giorniAzienda().reduce(0) { p, d in p + d.rows.reduce(0) { $0 + $1.quantity } }
+        analysisStore.giorniAzienda().reduce(0) { totale, giorno in
+            totale + giorno.rows.reduce(0) { $0 + max(0, $1.quantity) }
+        }
     }
 
     private func dataBreve(_ date: Date) -> String {
@@ -1010,7 +1036,7 @@ struct DatiAnalizzatiView: View {
 
     @ViewBuilder
     private var quickCheckView: some View {
-        let hasDifferences = !quickMismatches.isEmpty || !quickMissingDates.isEmpty || quickTotalOur != quickTotalCompany
+        let hasDifferences = quickTotalOur != quickTotalCompany
 
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -1021,40 +1047,36 @@ struct DatiAnalizzatiView: View {
                 Spacer()
             }
 
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("Date con differenze")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text("\(quickMismatches.count + quickMissingDates.count)")
+            VStack(spacing: 10) {
+                HStack {
+                    Text("TOTALE PEZZI BOLLETTE")
+                        .font(.headline)
+                    Spacer()
+                    Text("\(quickTotalOur)")
                         .font(.title2.bold())
                 }
-                Spacer()
-                VStack(alignment: .trailing) {
-                    Text("Totale pezzi")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text("\(quickTotalOur) / \(quickTotalCompany)")
-                        .font(.headline.bold())
-                }
-            }
 
-            if !quickMissingDates.isEmpty || !quickMismatches.isEmpty {
-                Text("DA CONTROLLARE:")
-                    .font(.caption.bold())
-                    .foregroundColor(.secondary)
-                ForEach(Array(Set(quickMissingDates + quickMismatches)).sorted(), id: \.self) { date in
-                    HStack {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.red)
-                        Text(dataBreve(date))
-                            .font(.subheadline.weight(.semibold))
-                    }
+                HStack {
+                    Text("TOTALE PEZZI FILE AZIENDA")
+                        .font(.headline)
+                    Spacer()
+                    Text("\(quickTotalCompany)")
+                        .font(.title2.bold())
                 }
-            } else {
-                Text("Date e quantità combaciano. Anche il totale generale combacia.")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.green)
+
+                Divider()
+
+                if quickTotalOur == quickTotalCompany {
+                    Text("PEZZI COMBACIANTI")
+                        .font(.headline.bold())
+                        .foregroundColor(.green)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Text("TOTALE PEZZI NON COMBACIANTE")
+                        .font(.headline.bold())
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity)
+                }
             }
         }
         .padding(16)

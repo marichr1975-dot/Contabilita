@@ -82,6 +82,14 @@ final class PDFAnalysisStore: ObservableObject {
         }
     }
 
+    /// Elimina dall'archivio l'analisi associata al file azienda cancellato.
+    /// In questo modo FILE AZIENDA e DATI ANALIZZATI restano sincronizzati.
+    func eliminaAnalisi(fileName: String) {
+        let normalizzato = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        analyses.removeAll { $0.fileName.caseInsensitiveCompare(normalizzato) == .orderedSame }
+        salvaTutte()
+    }
+
     func reset() {
         analyses.removeAll()
         UserDefaults.standard.removeObject(forKey: key)
