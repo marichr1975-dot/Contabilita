@@ -977,7 +977,7 @@ struct DatiAnalizzatiView: View {
 
             if fileNostre != nil && fileAzienda != nil {
                 Button {
-                    mostraRisultatoPezzi = true
+                    mostraConfrontoManuale = true
                 } label: {
                     HStack {
                         Image(systemName: "checklist")
