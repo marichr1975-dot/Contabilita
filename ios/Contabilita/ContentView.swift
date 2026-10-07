@@ -872,8 +872,7 @@ struct DatiAnalizzatiView: View {
     @ObservedObject var analysisStore: PDFAnalysisStore
     @ObservedObject var fileStore: PDFTransferStore
     @Environment(\.presentationMode) private var presentationMode
-    @State private var mostraConfrontoManuale = false
-    @State private var txtDaCondividere: URL?
+    @State private var mostraRisultatoPezzi = false
 
     private var fileNostre: URL? {
         guard !archivio.bollette.isEmpty else { return nil }
@@ -884,82 +883,26 @@ struct DatiAnalizzatiView: View {
         fileStore.files.first
     }
 
-    private var quickDates: [Date] {
-        var set = Set<Date>()
-        var cal = Calendar(identifier: .gregorian)
-        cal.locale = Locale(identifier: "it_IT")
-        for b in archivio.bollette { set.insert(cal.startOfDay(for: b.data)) }
-        for d in analysisStore.giorniAzienda() { set.insert(cal.startOfDay(for: d.date)) }
-        return set.sorted()
-    }
-
-    private func quickName(_ value: String) -> String {
-        value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func quickOur(_ date: Date) -> [String: Int] {
-        var cal = Calendar(identifier: .gregorian)
-        cal.locale = Locale(identifier: "it_IT")
-        var out: [String: Int] = [:]
-        for b in archivio.bollette where cal.isDate(b.data, inSameDayAs: date) {
-            for l in b.lavorazioni {
-                let n = quickName(l.nome)
-                let q = Int(l.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                if !n.isEmpty && q > 0 { out[n, default: 0] += q }
+    // IMPORTANTE: qui contiamo esclusivamente le quantità presenti nelle caselle
+    // delle nostre bollette. Il testo libero/righe aggiunte manualmente non entra.
+    private var totalePezziNostre: Int {
+        archivio.bollette.reduce(0) { totale, bolletta in
+            totale + bolletta.lavorazioni.reduce(0) { parziale, lavorazione in
+                parziale + (Int(lavorazione.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0)
             }
         }
-        return out
     }
 
-    private func quickCompany(_ date: Date) -> [String: Int] {
-        var cal = Calendar(identifier: .gregorian)
-        cal.locale = Locale(identifier: "it_IT")
-        var out: [String: Int] = [:]
-        for d in analysisStore.giorniAzienda() where cal.isDate(d.date, inSameDayAs: date) {
-            for r in d.rows {
-                let n = quickName(r.article)
-                if !n.isEmpty && r.quantity > 0 { out[n, default: 0] += r.quantity }
-            }
-        }
-        return out
-    }
-
-    private var quickMismatches: [Date] {
-        quickDates.filter {
-            let ours = quickOur($0)
-            let company = quickCompany($0)
-            return !ours.isEmpty && !company.isEmpty && ours != company
+    // Totale delle quantità presenti nel file azienda.
+    private var totalePezziAzienda: Int {
+        analysisStore.giorniAzienda().reduce(0) { totale, giorno in
+            totale + giorno.rows.reduce(0) { $0 + $1.quantity }
         }
     }
 
-    private var quickMissingDates: [Date] {
-        var cal = Calendar(identifier: .gregorian)
-        cal.locale = Locale(identifier: "it_IT")
-        return quickDates.filter { d in
-            let ours = archivio.bollette.contains { cal.isDate($0.data, inSameDayAs: d) }
-            let company = analysisStore.giorniAzienda().contains { cal.isDate($0.date, inSameDayAs: d) }
-            return ours != company
-        }
+    private var pezziCombaciano: Bool {
+        totalePezziNostre == totalePezziAzienda
     }
-
-    private var quickTotalOur: Int {
-        archivio.bollette.reduce(0) { p, b in
-            p + b.lavorazioni.reduce(0) { $0 + (Int($1.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0) }
-        }
-    }
-
-    private var quickTotalCompany: Int {
-        analysisStore.giorniAzienda().reduce(0) { p, d in p + d.rows.reduce(0) { $0 + $1.quantity } }
-    }
-
-    private func dataBreve(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "it_IT")
-        f.dateFormat = "dd/MM/yyyy"
-        return f.string(from: date)
-    }
-
 
     var body: some View {
         NavigationView {
@@ -974,11 +917,11 @@ struct DatiAnalizzatiView: View {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
             }
-            .sheet(isPresented: $mostraConfrontoManuale) {
-                ConfrontoManualeView(archivio: archivio, analysisStore: analysisStore)
-            }
-            .sheet(item: $txtDaCondividere) { url in
-                TXTShareSheet(url: url)
+            .sheet(isPresented: $mostraRisultatoPezzi) {
+                RisultatoConfrontoPezziView(
+                    totaleNostre: totalePezziNostre,
+                    totaleAzienda: totalePezziAzienda
+                )
             }
         }
         .navigationViewStyle(.stack)
@@ -991,149 +934,138 @@ struct DatiAnalizzatiView: View {
                 .font(.title2.weight(.bold))
                 .padding(.top, 8)
 
-            Text("Prima fai il controllo rapido. Poi, se vuoi, verifica una data alla volta sul foglio stampato della ditta.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 8)
-
             if fileNostre != nil && fileAzienda != nil && !analysisStore.giorniAzienda().isEmpty {
-                quickCheckView
+                VStack(spacing: 12) {
+                    Text("CONTROLLO PEZZI")
+                        .font(.headline)
+
+                    HStack(spacing: 12) {
+                        VStack {
+                            Text("TOTALE PEZZI BOLLETTE")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                            Text("\(totalePezziNostre)")
+                                .font(.title.bold())
+                        }
+                        .frame(maxWidth: .infinity)
+
+                        VStack {
+                            Text("TOTALE PEZZI FILE AZIENDA")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                            Text("\(totalePezziAzienda)")
+                                .font(.title.bold())
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+
+                    Text(pezziCombaciano ? "PEZZI COMBACIANTI" : "PEZZI NON COMBACIANTE")
+                        .font(.headline.weight(.bold))
+                        .foregroundColor(pezziCombaciano ? .green : .red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background((pezziCombaciano ? Color.green : Color.red).opacity(0.10))
+                        .cornerRadius(10)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity)
+                .background(Color.gray.opacity(0.06))
+                .cornerRadius(14)
             }
 
             if fileNostre != nil && fileAzienda != nil {
-                analysisActionsView
-            } else {
-                missingFilesView
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var quickCheckView: some View {
-        let hasDifferences = !quickMismatches.isEmpty || !quickMissingDates.isEmpty || quickTotalOur != quickTotalCompany
-
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: hasDifferences ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .foregroundColor(hasDifferences ? .orange : .green)
-                Text("CHECK RAPIDO")
-                    .font(.headline)
-                Spacer()
-            }
-
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("Date con differenze")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text("\(quickMismatches.count + quickMissingDates.count)")
-                        .font(.title2.bold())
-                }
-                Spacer()
-                VStack(alignment: .trailing) {
-                    Text("Totale pezzi")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text("\(quickTotalOur) / \(quickTotalCompany)")
-                        .font(.headline.bold())
-                }
-            }
-
-            if !quickMissingDates.isEmpty || !quickMismatches.isEmpty {
-                Text("DA CONTROLLARE:")
-                    .font(.caption.bold())
-                    .foregroundColor(.secondary)
-                ForEach(Array(Set(quickMissingDates + quickMismatches)).sorted(), id: \.self) { date in
+                Button {
+                    mostraRisultatoPezzi = true
+                } label: {
                     HStack {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.red)
-                        Text(dataBreve(date))
-                            .font(.subheadline.weight(.semibold))
+                        Image(systemName: "checklist")
+                        Text("INIZIA CONFRONTO").font(.headline)
+                        Spacer()
+                        Image(systemName: "arrow.right")
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
             } else {
-                Text("Date e quantità combaciano. Anche il totale generale combacia.")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.green)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity)
-        .background(Color.orange.opacity(0.07))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.22), lineWidth: 1))
-        .cornerRadius(14)
-    }
-
-    @ViewBuilder
-    private var analysisActionsView: some View {
-        VStack(spacing: 10) {
-            Button {
-                mostraConfrontoManuale = true
-            } label: {
-                HStack {
-                    Image(systemName: "checklist")
-                    Text("INIZIA CONFRONTO").font(.headline)
-                    Spacer()
-                    Image(systemName: "arrow.right")
+                VStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text("Per fare l'analisi servono entrambi i file.")
+                        .font(.headline)
+                    Text("Inserisci/modifica le nostre bollette e carica il file dell'azienda dal menu dedicato.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
                 }
+                .padding(16)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .background(Color.orange.opacity(0.08))
+                .cornerRadius(14)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.blue)
         }
-    }
-
-    @ViewBuilder
-    private var missingFilesView: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.orange)
-            Text("Per fare l'analisi servono entrambi i file.")
-                .font(.headline)
-            Text("Inserisci/modifica le nostre bollette e carica il file dell'azienda dal menu dedicato.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity)
-        .background(Color.orange.opacity(0.08))
-        .cornerRadius(14)
-    }
-
-    @ViewBuilder
-    private func fileCard(
-        title: String,
-        subtitle: String,
-        icon: String,
-        tint: Color,
-        available: Bool
-    ) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 30))
-                .foregroundColor(available ? tint : .gray)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.headline)
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-            }
-            Spacer()
-            Image(systemName: available ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundColor(available ? .green : .red)
-                .font(.title3)
-        }
-        .padding(14)
-        .background(tint.opacity(0.08))
-        .cornerRadius(12)
     }
 }
 
+struct RisultatoConfrontoPezziView: View {
+    let totaleNostre: Int
+    let totaleAzienda: Int
+    @Environment(\.presentationMode) private var presentationMode
+
+    private var combaciano: Bool { totaleNostre == totaleAzienda }
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 22) {
+                Image(systemName: combaciano ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(.system(size: 64))
+                    .foregroundColor(combaciano ? .green : .red)
+
+                Text(combaciano ? "PEZZI COMBACIANTI" : "PEZZI NON COMBACIANTE")
+                    .font(.title2.bold())
+                    .foregroundColor(combaciano ? .green : .red)
+
+                HStack(spacing: 20) {
+                    VStack {
+                        Text("BOLLETTE")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(totaleNostre)")
+                            .font(.largeTitle.bold())
+                    }
+                    VStack {
+                        Text("FILE AZIENDA")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(totaleAzienda)")
+                            .font(.largeTitle.bold())
+                    }
+                }
+
+                Text(combaciano
+                     ? "Il totale dei pezzi delle nostre bollette coincide con quello del file azienda."
+                     : "Il totale dei pezzi delle nostre bollette non coincide con quello del file azienda.")
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+
+                Spacer()
+            }
+            .padding(24)
+            .navigationTitle("Confronto")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+}
 
 struct ConfrontoManualeView: View {
     @ObservedObject var archivio: Archivio
