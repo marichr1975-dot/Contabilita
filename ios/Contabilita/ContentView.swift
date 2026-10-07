@@ -477,7 +477,7 @@ struct NuovaBollettaView: View {
                 GeometryReader { geo in
                     let scale = min(geo.size.width / immagineW, 1.0)
                     ZStack(alignment: .topLeading) {
-                        Image("bolletta_originale")
+                        Image("BollettaOriginale")
                             .resizable()
                             .aspectRatio(immagineW / immagineH, contentMode: .fit)
                             .frame(width: immagineW * scale, height: immagineH * scale)
