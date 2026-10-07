@@ -186,7 +186,7 @@ struct ContentView: View {
             }
             .padding(28)
             .navigationTitle("Contabilità")
-            .sheet(isPresented: $nuovaBolletta) {
+            .fullScreenCover(isPresented: $nuovaBolletta) {
                 NuovaBollettaView(archivio: archivio)
             }
             .sheet(isPresented: $modificaBolletta) {
@@ -413,22 +413,8 @@ struct NuovaBollettaView: View {
     @State private var mostraAggiungiArticolo = false
     @State private var nuovoNomeArticolo = ""
 
-    private let immagineW: CGFloat = 1536
-    private let immagineH: CGFloat = 2048
-
-    // Posizioni relative alla fotografia originale 1536 x 2048.
-    private let articoli: [FormArticolo] = [
-        FormArticolo(id: "CLASSY", nome: "CLASSY", varianti: ["manici corti", "manici corto e tracolla"], x: 795, y: 245, width: 180, height: 145),
-        FormArticolo(id: "BAGPACK", nome: "BAGPACK", varianti: ["L", "M", "S"], x: 350, y: 440, width: 180, height: 175),
-        FormArticolo(id: "TRAINING", nome: "TRAINING", varianti: ["L", "M"], x: 350, y: 625, width: 180, height: 145),
-        FormArticolo(id: "MESSENGER", nome: "MESSENGER", varianti: ["L", "M"], x: 350, y: 800, width: 180, height: 145),
-        FormArticolo(id: "TODAY", nome: "TODAY", varianti: ["M", "S"], x: 350, y: 965, width: 180, height: 145),
-        FormArticolo(id: "BAGPACK PRO", nome: "BAGPACK PRO", varianti: [""], x: 805, y: 440, width: 180, height: 175),
-        FormArticolo(id: "ACTIVITY", nome: "ACTIVITY", varianti: [""], x: 805, y: 625, width: 180, height: 145),
-        FormArticolo(id: "MONEYFUL", nome: "MONEYFUL", varianti: ["L", "M"], x: 805, y: 800, width: 180, height: 145),
-        FormArticolo(id: "CASE", nome: "CASE", varianti: ["L", "M", "S"], x: 805, y: 965, width: 180, height: 175),
-        FormArticolo(id: "ESSENTIAL", nome: "ESSENTIAL", varianti: [""], x: 805, y: 1130, width: 180, height: 100)
-    ]
+    private let canvasW: CGFloat = 768
+    private let canvasH: CGFloat = 1024
 
     init(archivio: Archivio, bollettaDaModificare: Bolletta? = nil) {
         self.archivio = archivio
@@ -472,62 +458,102 @@ struct NuovaBollettaView: View {
     }
 
     var body: some View {
-        NavigationView {
-            ScrollView([.vertical, .horizontal], showsIndicators: true) {
-                GeometryReader { geo in
-                    let scale = min(geo.size.width / immagineW, 1.0)
-                    ZStack(alignment: .topLeading) {
-                        Image("BollettaOriginale")
-                            .resizable()
-                            .aspectRatio(immagineW / immagineH, contentMode: .fit)
-                            .frame(width: immagineW * scale, height: immagineH * scale)
+        GeometryReader { geo in
+            let scale = min(geo.size.width / canvasW, geo.size.height / canvasH)
 
-                        // Copre esclusivamente le scritte a penna della fotografia originale.
-                        copertureScrittura(scale: scale)
+            ZStack {
+                Color.white.ignoresSafeArea()
 
-                        // Data: premendo qui si apre direttamente il calendario.
-                        Button { mostraCalendario = true } label: {
-                            HStack(spacing: 4) {
-                                Text(data.formatted(.dateTime.day().month(.twoDigits).year()))
-                                    .font(.system(size: 25 * scale, weight: .medium))
-                                    .foregroundColor(.blue)
-                                Image(systemName: "calendar")
-                                    .font(.system(size: 22 * scale))
-                                    .foregroundColor(.blue)
-                            }
-                            .frame(width: 230 * scale, height: 58 * scale)
-                            .contentShape(Rectangle())
-                        }
-                        .position(x: 255 * scale, y: 165 * scale)
+                ZStack {
+                    // La maschera approvata: identica alla schermata mostrata dall'utente.
+                    Image("BollettaUI")
+                        .resizable()
+                        .frame(width: canvasW, height: canvasH)
 
-                        ForEach(articoli) { articolo in
-                            campiArticolo(articolo, scale: scale)
-                        }
+                    // Titolo dinamico.
+                    Rectangle()
+                        .fill(Color.white.opacity(0.97))
+                        .frame(width: 310, height: 45)
+                        .position(x: 385, y: 52)
+                    Text(bollettaDaModificare == nil ? "Nuova Bolletta" : "Modifica Bolletta")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.black)
+                        .position(x: 385, y: 52)
 
-                        nuoviArticoliOverlay(scale: scale)
+                    // Data: campo reale, mantenendo esattamente l'aspetto della maschera.
+                    Rectangle()
+                        .fill(Color.white.opacity(0.98))
+                        .frame(width: 185, height: 46)
+                        .position(x: 180, y: 112)
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(Color.gray.opacity(0.55), lineWidth: 1)
+                        .frame(width: 185, height: 46)
+                        .position(x: 180, y: 112)
+                    HStack(spacing: 8) {
+                        Text(dataString)
+                            .font(.system(size: 18, weight: .regular))
+                            .foregroundColor(.primary)
+                        Image(systemName: "calendar")
+                            .font(.system(size: 20))
+                            .foregroundColor(.blue)
                     }
-                    .frame(width: immagineW * scale, height: immagineH * scale)
-                }
-                .frame(minWidth: immagineW, minHeight: immagineH)
-            }
-            .navigationTitle(bollettaDaModificare == nil ? "Nuova bolletta" : "Modifica bolletta")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Annulla") { presentationMode.wrappedValue.dismiss() }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 12) {
-                        if bollettaDaModificare != nil {
-                            Button("CANCELLA") { mostraConfermaCancella = true }
-                                .foregroundColor(.red)
-                        }
-                        Button("SALVA") { salva() }
-                            .font(.headline)
+                    .position(x: 180, y: 112)
+                    Button { mostraCalendario = true } label: {
+                        Color.clear.frame(width: 185, height: 46)
                     }
+                    .position(x: 180, y: 112)
+
+                    // Quantità: le caselle sono quelle della maschera; il valore digitato è rosso.
+                    quantityField("CLASSY manici corti", x: 652, y: 208, w: 104, h: 34)
+                    quantityField("CLASSY manici corto e tracolla", x: 652, y: 250, w: 104, h: 34)
+
+                    quantityField("BAGPACK L", x: 330, y: 352, w: 80, h: 34)
+                    quantityField("BAGPACK M", x: 330, y: 395, w: 80, h: 34)
+                    quantityField("BAGPACK S", x: 330, y: 438, w: 80, h: 34)
+
+                    quantityField("TRAINING L", x: 330, y: 520, w: 80, h: 34)
+                    quantityField("TRAINING M", x: 330, y: 563, w: 80, h: 34)
+
+                    quantityField("MESSENGER L", x: 330, y: 645, w: 80, h: 34)
+                    quantityField("MESSENGER M", x: 330, y: 688, w: 80, h: 34)
+
+                    quantityField("TODAY M", x: 330, y: 785, w: 80, h: 34)
+                    quantityField("TODAY S", x: 330, y: 828, w: 80, h: 34)
+
+                    quantityField("BAGPACK PRO", x: 672, y: 395, w: 104, h: 34)
+                    quantityField("ACTIVITY", x: 672, y: 520, w: 104, h: 34)
+
+                    quantityField("MONEYFUL L", x: 674, y: 622, w: 100, h: 34)
+                    quantityField("MONEYFUL M", x: 674, y: 669, w: 100, h: 34)
+
+                    quantityField("CASE L", x: 674, y: 740, w: 100, h: 34)
+                    quantityField("CASE M", x: 674, y: 785, w: 100, h: 34)
+                    quantityField("CASE S", x: 674, y: 829, w: 100, h: 34)
+                    quantityField("ESSENTIAL", x: 674, y: 888, w: 100, h: 34)
+
+                    // Spazio inferiore lasciato alla scrittura degli articoli nuovi.
+                    nuoviArticoliOverlay()
+
+                    // Bottoni trasparenti sopra quelli disegnati nella maschera.
+                    Button { presentationMode.wrappedValue.dismiss() } label: {
+                        Color.clear.frame(width: 115, height: 48)
+                    }
+                    .position(x: 70, y: 51)
+                    .accessibilityLabel("Indietro")
+
+                    Button { salva() } label: {
+                        Color.clear.frame(width: 95, height: 48)
+                    }
+                    .position(x: 710, y: 51)
+                    .accessibilityLabel("Salva")
                 }
+                .frame(width: canvasW, height: canvasH)
+                .scaleEffect(scale)
+                .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
         }
+        .ignoresSafeArea()
+        .statusBar(hidden: true)
         .sheet(isPresented: $mostraCalendario) {
             NavigationView {
                 VStack {
@@ -575,75 +601,55 @@ struct NuovaBollettaView: View {
         }
     }
 
-    private func copertureScrittura(scale: CGFloat) -> some View {
-        ZStack {
-            // Nome scritto a mano e data originale.
-            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 190 * scale, height: 44 * scale).position(x: 230 * scale, y: 103 * scale)
-            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 180 * scale, height: 42 * scale).position(x: 255 * scale, y: 164 * scale)
-
-            // Segni e numeri scritti a mano nelle quantità della fotografia.
-            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 58 * scale, height: 42 * scale).position(x: 286 * scale, y: 333 * scale)
-            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 105 * scale, height: 42 * scale).position(x: 870 * scale, y: 333 * scale)
-            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 58 * scale, height: 42 * scale).position(x: 700 * scale, y: 865 * scale)
-            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 95 * scale, height: 42 * scale).position(x: 870 * scale, y: 865 * scale)
-            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 58 * scale, height: 42 * scale).position(x: 286 * scale, y: 1030 * scale)
-            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 95 * scale, height: 42 * scale).position(x: 420 * scale, y: 1030 * scale)
-        }
-        .allowsHitTesting(false)
+    private var dataString: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "it_IT")
+        f.dateFormat = "dd/MM/yyyy"
+        return f.string(from: data)
     }
 
-    private func campiArticolo(_ articolo: FormArticolo, scale: CGFloat) -> some View {
-        VStack(spacing: 5 * scale) {
-            ForEach(articolo.varianti.indices, id: \.self) { i in
-                let variante = articolo.varianti[i]
-                let key = variante.isEmpty ? articolo.id : "\(articolo.id) \(variante)"
-                campoQuantita(key: key, scale: scale)
-            }
-        }
-        .frame(width: articolo.width * scale, height: articolo.height * scale, alignment: .topTrailing)
-        .position(x: (articolo.x + articolo.width / 2) * scale, y: (articolo.y + articolo.height / 2) * scale)
-    }
-
-    private func campoQuantita(key: String, scale: CGFloat) -> some View {
+    @ViewBuilder
+    private func quantityField(_ key: String, x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat) -> some View {
         TextField("", text: bindingQuantita(key))
             .keyboardType(.numberPad)
             .multilineTextAlignment(.center)
-            .font(.system(size: 25 * scale, weight: .bold))
+            .font(.system(size: 20, weight: .bold))
             .foregroundColor(.red)
-            .frame(width: 125 * scale, height: 43 * scale)
-            .background(Color.white.opacity(0.04))
-            .overlay(
-                RoundedRectangle(cornerRadius: 4 * scale)
-                    .stroke(Color.gray.opacity(0.35), lineWidth: 1)
-            )
+            .frame(width: w, height: h)
+            .background(Color.clear)
+            .position(x: x, y: y)
     }
 
-    private func nuoviArticoliOverlay(scale: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 8 * scale) {
-            ForEach($nuoviArticoli) { $articolo in
-                HStack(spacing: 8 * scale) {
-                    TextField("articolo", text: $articolo.nome)
-                        .font(.system(size: 20 * scale))
-                        .textFieldStyle(.roundedBorder)
-                    TextField("pezzi", text: $articolo.quantita)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.center)
-                        .font(.system(size: 22 * scale, weight: .bold))
-                        .foregroundColor(.red)
-                        .frame(width: 115 * scale)
-                        .textFieldStyle(.roundedBorder)
-                }
-            }
+    @ViewBuilder
+    private func nuoviArticoliOverlay() -> some View {
+        if nuoviArticoli.isEmpty {
             Button {
                 mostraAggiungiArticolo = true
             } label: {
-                Label("AGGIUNGI ARTICOLO", systemImage: "plus.circle")
-                    .font(.system(size: 17 * scale, weight: .semibold))
+                Color.clear.frame(width: 680, height: 55)
             }
+            .position(x: 384, y: 968)
+            .accessibilityLabel("Aggiungi articolo")
+        } else {
+            VStack(spacing: 4) {
+                ForEach($nuoviArticoli) { $articolo in
+                    HStack(spacing: 10) {
+                        TextField("articolo", text: $articolo.nome)
+                            .font(.system(size: 16))
+                            .frame(width: 560)
+                        TextField("", text: $articolo.quantita)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.center)
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(.red)
+                            .frame(width: 75)
+                    }
+                }
+            }
+            .padding(.horizontal, 18)
+            .frame(width: 690, height: 60, alignment: .top)
+            .position(x: 384, y: 968)
         }
-        .padding(10 * scale)
-        .frame(width: 900 * scale, alignment: .leading)
-        .position(x: 760 * scale, y: 1535 * scale)
     }
 
     private func bindingQuantita(_ key: String) -> Binding<String> {
@@ -791,7 +797,7 @@ struct SelezionaDataModificaView: View {
                     Button("Annulla") { presentationMode.wrappedValue.dismiss() }
                 }
             }
-            .sheet(item: $bollettaSelezionata) { bolletta in
+            .fullScreenCover(item: $bollettaSelezionata) { bolletta in
                 NuovaBollettaView(archivio: archivio, bollettaDaModificare: bolletta)
             }
             .sheet(isPresented: $mostraScelta) {
