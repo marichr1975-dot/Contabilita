@@ -1134,12 +1134,41 @@ struct ConfrontoManualeView: View {
     ]
 
     private func articoloRiepilogo(_ nome: String) -> String? {
+        // Tutte le varianti inserite nella bolletta (taglie, manici, tracolla,
+        // ecc.) vengono aggregate nell'articolo principale del file aziendale.
         let n = normalizza(nome)
-        if n.hasPrefix("classy") { return "CLASSY" }
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: ".", with: "")
+
         if n.hasPrefix("messenger") { return "MESSENGER" }
+        if n.hasPrefix("bagpackpro") || n.hasPrefix("zainopro") { return "ZAINO PRO" }
         if n.hasPrefix("bagpack") { return "BAGPACK" }
-        if n == "case" { return "CASE" }
-        return ordineArticoliDitta.first { normalizza($0) == n }
+        if n.hasPrefix("today") { return "TODAY" }
+        if n.hasPrefix("activity") { return "ACTIVITY" }
+        if n.hasPrefix("moneyful") { return "MONEYFUL" }
+        if n.hasPrefix("classy") { return "CLASSY" }
+        if n.hasPrefix("case") {
+            return n.hasPrefix("casemarina") ? "case marina" : "CASE"
+        }
+        if n.hasPrefix("essential") { return "ESSENTIAL" }
+        if n.hasPrefix("training") { return "TRAINING" }
+        if n.hasPrefix("zainimarin") { return "ZAINI MARINA" }
+        if n.hasPrefix("casemarina") { return "case marina" }
+        if n.hasPrefix("borsainstoffa") || n.hasPrefix("borsastoffa") { return "BORSA IN STOFFA" }
+        if n.hasPrefix("portapc") { return "PORTAPC" }
+        if n.hasPrefix("glamxl") { return "GLAM XL" }
+        if n.hasPrefix("glam") { return "GLAM" }
+        if n.hasPrefix("close") { return "CLOSE" }
+
+        return ordineArticoliDitta.first { articolo in
+            normalizza(articolo)
+                .replacingOccurrences(of: " ", with: "")
+                .replacingOccurrences(of: "-", with: "")
+                .replacingOccurrences(of: "_", with: "")
+                .replacingOccurrences(of: ".", with: "") == n
+        }
     }
 
     private var righeConfrontoArticoli: [(nome: String, nostre: Int, azienda: Int)] {
@@ -1212,9 +1241,9 @@ struct ConfrontoManualeView: View {
         var out: [String: Int] = [:]
         for b in archivio.bollette where calendario.isDate(b.data, inSameDayAs: data) {
             for l in b.lavorazioni {
-                let nome = normalizza(l.nome)
+                guard let nome = articoloRiepilogo(l.nome) else { continue }
                 let q = Int(l.quantita.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-                if !nome.isEmpty && q != 0 { out[nome, default: 0] += q }
+                if q != 0 { out[nome, default: 0] += q }
             }
         }
         return out
@@ -1225,8 +1254,8 @@ struct ConfrontoManualeView: View {
         var out: [String: Int] = [:]
         for day in analysisStore.giorniAzienda() where calendario.isDate(day.date, inSameDayAs: data) {
             for row in day.rows {
-                let nome = normalizza(row.article)
-                if !nome.isEmpty { out[nome, default: 0] += row.quantity }
+                guard let nome = articoloRiepilogo(row.article) else { continue }
+                out[nome, default: 0] += row.quantity
             }
         }
         return out
