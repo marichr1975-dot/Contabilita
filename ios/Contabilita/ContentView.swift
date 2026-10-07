@@ -544,7 +544,6 @@ struct NuovaBollettaView: View {
                     }
                 }
             }
-            .presentationDetents([.medium])
         }
         .sheet(isPresented: $mostraAggiungiArticolo) {
             NavigationView {
