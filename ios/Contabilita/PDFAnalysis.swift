@@ -63,6 +63,9 @@ struct PDFAnalysisResult: Identifiable, Codable {
 
 final class PDFAnalysisStore: ObservableObject {
     @Published private(set) var analyses: [PDFAnalysisResult] = []
+    @Published private(set) var fileAziendaCorretto: Bool? = nil
+    @Published private(set) var fileAziendaCalcolato: Double? = nil
+    @Published private(set) var fileAziendaDichiarato: Double? = nil
     @Published var richiediReset = false
     private let key = "contabilita_pdf_analisi"
 
@@ -82,18 +85,25 @@ final class PDFAnalysisStore: ObservableObject {
         }
     }
 
-    /// Elimina dall'archivio l'analisi associata al file azienda cancellato.
-    /// In questo modo FILE AZIENDA e DATI ANALIZZATI restano sincronizzati.
-    func eliminaAnalisi(fileName: String) {
-        let normalizzato = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        analyses.removeAll { $0.fileName.caseInsensitiveCompare(normalizzato) == .orderedSame }
-        salvaTutte()
-    }
-
     func reset() {
         analyses.removeAll()
+        fileAziendaCorretto = nil
+        fileAziendaCalcolato = nil
+        fileAziendaDichiarato = nil
         UserDefaults.standard.removeObject(forKey: key)
         richiediReset = false
+    }
+
+    func verificaFileAzienda(file: URL) {
+        guard let check = ExcelAnalysis.verificaTotale(file: file) else {
+            fileAziendaCorretto = false
+            fileAziendaCalcolato = nil
+            fileAziendaDichiarato = nil
+            return
+        }
+        fileAziendaCorretto = check.isCorrect
+        fileAziendaCalcolato = check.calculatedTotal
+        fileAziendaDichiarato = check.reportedTotal
     }
 
     func analizza(file: URL, bollette: [Bolletta]) {

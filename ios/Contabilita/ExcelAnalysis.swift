@@ -6,6 +6,12 @@ struct ExcelAnalysisDay {
     let rows: [PDFAnalysisRow]
 }
 
+struct ExcelFileCheck {
+    let calculatedTotal: Double
+    let reportedTotal: Double?
+    let isCorrect: Bool
+}
+
 final class ExcelAnalysis {
     static func analizza(file: URL) -> [ExcelAnalysisDay]? {
         guard file.pathExtension.lowercased() == "xlsx" else { return nil }
@@ -27,6 +33,92 @@ final class ExcelAnalysis {
             return result
         }
         return nil
+    }
+
+    static func verificaTotale(file: URL) -> ExcelFileCheck? {
+        guard file.pathExtension.lowercased() == "xlsx" else { return nil }
+        guard let archive = try? Archive(url: file, accessMode: .read) else { return nil }
+        let shared = sharedStrings(archive)
+        let sheets = archive.filter {
+            $0.path.hasPrefix("xl/worksheets/") && $0.path.hasSuffix(".xml")
+        }.map(\.path).sorted()
+        for path in sheets {
+            guard let data = read(archive, path),
+                  let rows = parseRows(data, shared: shared),
+                  let days = parseWorkbook(rows), !days.isEmpty else { continue }
+            // Per il controllo matematico del FILE AZIENDA usiamo tutte le
+            // quantità numeriche presenti nelle colonne degli articoli, anche
+            // se una riga non ha data (es. un totale inserito manualmente).
+            // Le righe di riepilogo "TOT. BORSE" e successive sono escluse.
+            let calculated = calcolaTotaleDaCelle(rows)
+            var reported: Double?
+            for row in rows {
+                for i in 0..<row.count {
+                    let label = normStatic(row[i])
+                    if label == "totale" || label == "totalegenerale" {
+                        if i + 1 < row.count {
+                            for j in (i + 1)..<row.count {
+                                if let n = number(row[j]) { reported = n; break }
+                            }
+                        }
+                    }
+                    if reported != nil { break }
+                }
+                if reported != nil { break }
+            }
+            guard let reported else {
+                return ExcelFileCheck(calculatedTotal: calculated, reportedTotal: nil, isCorrect: false)
+            }
+            return ExcelFileCheck(calculatedTotal: calculated, reportedTotal: reported, isCorrect: abs(calculated - reported) < 0.01)
+        }
+        return nil
+    }
+
+    private static func calcolaTotaleDaCelle(_ rows: [[String]]) -> Double {
+        func norm(_ s: String) -> String {
+            s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+             .replacingOccurrences(of: " ", with: "")
+             .replacingOccurrences(of: "_", with: "")
+             .replacingOccurrences(of: "-", with: "")
+             .replacingOccurrences(of: ".", with: "")
+        }
+        guard let headerIndex = rows.firstIndex(where: { row in
+            row.contains { norm($0) == "data" || norm($0).contains("data") }
+        }) else { return 0 }
+        let header = rows[headerIndex]
+        let dateCol = header.firstIndex { norm($0) == "data" || norm($0).contains("data") } ?? 0
+        var articleCols: [(Int, Double)] = []
+        if headerIndex > 0 {
+            let prices = rows[headerIndex - 1]
+            for c in header.indices where c != dateCol {
+                let name = header[c].trimmingCharacters(in: .whitespacesAndNewlines)
+                let n = norm(name)
+                guard !name.isEmpty,
+                      !n.contains("prezzounitario"),
+                      !n.contains("totalepezzi"),
+                      !n.contains("totaleeuro"),
+                      !n.contains("totalegenerale") else { continue }
+                if c < prices.count, let price = number(prices[c]) {
+                    articleCols.append((c, price))
+                }
+            }
+        }
+        var total = 0.0
+        for row in rows.dropFirst(headerIndex + 1) {
+            if row.contains(where: { norm($0) == "totborse" || norm($0) == "toteuro" || norm($0) == "totaleuro" }) { break }
+            for (c, price) in articleCols where c < row.count {
+                if let q = number(row[c]), q > 0 { total += q * price }
+            }
+        }
+        return total
+    }
+
+    private static func normStatic(_ s: String) -> String {
+        s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+         .replacingOccurrences(of: " ", with: "")
+         .replacingOccurrences(of: "_", with: "")
+         .replacingOccurrences(of: "-", with: "")
+         .replacingOccurrences(of: ".", with: "")
     }
 
     private static func parseWorkbook(_ rows: [[String]]) -> [ExcelAnalysisDay]? {
