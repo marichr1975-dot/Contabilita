@@ -390,127 +390,174 @@ func gruppiBollettaDaNomi() -> [GruppoLavorazione] {
     return articoli.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) }
 }
 
+struct FormArticolo: Identifiable {
+    let id: String
+    let nome: String
+    let varianti: [String]
+    let x: CGFloat
+    let y: CGFloat
+    let width: CGFloat
+    let height: CGFloat
+}
+
 struct NuovaBollettaView: View {
     @ObservedObject var archivio: Archivio
     @Environment(\.presentationMode) private var presentationMode
     private let bollettaDaModificare: Bolletta?
 
-    @State private var data = Date()
-    @State private var dataConfermata = false
-    @State private var gruppi: [GruppoLavorazione] = []
-    @FocusState private var rigaAttiva: Int?
+    @State private var data: Date
+    @State private var mostraCalendario = false
+    @State private var quantita: [String: String]
+    @State private var nuoviArticoli: [Lavorazione]
     @State private var mostraConfermaCancella = false
-    @State private var nuovoArticolo = ""
     @State private var mostraAggiungiArticolo = false
+    @State private var nuovoNomeArticolo = ""
+
+    private let immagineW: CGFloat = 1536
+    private let immagineH: CGFloat = 2048
+
+    // Posizioni relative alla fotografia originale 1536 x 2048.
+    private let articoli: [FormArticolo] = [
+        FormArticolo(id: "CLASSY", nome: "CLASSY", varianti: ["manici corti", "manici corto e tracolla"], x: 795, y: 245, width: 180, height: 145),
+        FormArticolo(id: "BAGPACK", nome: "BAGPACK", varianti: ["L", "M", "S"], x: 350, y: 440, width: 180, height: 175),
+        FormArticolo(id: "TRAINING", nome: "TRAINING", varianti: ["L", "M"], x: 350, y: 625, width: 180, height: 145),
+        FormArticolo(id: "MESSENGER", nome: "MESSENGER", varianti: ["L", "M"], x: 350, y: 800, width: 180, height: 145),
+        FormArticolo(id: "TODAY", nome: "TODAY", varianti: ["M", "S"], x: 350, y: 965, width: 180, height: 145),
+        FormArticolo(id: "BAGPACK PRO", nome: "BAGPACK PRO", varianti: [""], x: 805, y: 440, width: 180, height: 175),
+        FormArticolo(id: "ACTIVITY", nome: "ACTIVITY", varianti: [""], x: 805, y: 625, width: 180, height: 145),
+        FormArticolo(id: "MONEYFUL", nome: "MONEYFUL", varianti: ["L", "M"], x: 805, y: 800, width: 180, height: 145),
+        FormArticolo(id: "CASE", nome: "CASE", varianti: ["L", "M", "S"], x: 805, y: 965, width: 180, height: 175),
+        FormArticolo(id: "ESSENTIAL", nome: "ESSENTIAL", varianti: [""], x: 805, y: 1130, width: 180, height: 100)
+    ]
 
     init(archivio: Archivio, bollettaDaModificare: Bolletta? = nil) {
         self.archivio = archivio
         self.bollettaDaModificare = bollettaDaModificare
         _data = State(initialValue: bollettaDaModificare?.data ?? Date())
-        _dataConfermata = State(initialValue: bollettaDaModificare != nil)
-        if let b = bollettaDaModificare {
-            var gruppiIniziali = gruppiBollettaDaNomi()
-            let lavoriSalvati = b.lavorazioni
-            let normalizzaTesto: (String) -> String = { testo in
-                testo.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-                    .replacingOccurrences(of: " ", with: "")
-                    .replacingOccurrences(of: "-", with: "")
-            }
 
-            for g in gruppiIniziali.indices {
-                for v in gruppiIniziali[g].voci.indices {
-                    let nomeCompleto = gruppiIniziali[g].voci[v].nome.isEmpty
-                        ? gruppiIniziali[g].nome
-                        : "\(gruppiIniziali[g].nome) \(gruppiIniziali[g].voci[v].nome)"
-                    if let lavoro = lavoriSalvati.first(where: { normalizzaTesto($0.nome) == normalizzaTesto(nomeCompleto) }) {
-                        gruppiIniziali[g].voci[v].quantita = lavoro.quantita
-                    }
-                }
-            }
-
-            // Mantiene eventuali articoli personalizzati presenti nella bolletta.
-            let nomiStandard = Set(gruppiIniziali.flatMap { g in
-                g.voci.map { v in
-                    v.nome.isEmpty ? g.nome : "\(g.nome) \(v.nome)"
-                }
-            }.map(normalizzaTesto))
-
-            for lavoro in lavoriSalvati where !nomiStandard.contains(normalizzaTesto(lavoro.nome)) {
-                gruppiIniziali.append(
-                    GruppoLavorazione(
-                        nome: lavoro.nome,
-                        voci: [VoceLavorazione(nome: "", quantita: lavoro.quantita)]
-                    )
-                )
-            }
-
-            _gruppi = State(initialValue: gruppiIniziali)
-        } else {
-            var iniziali = gruppiBollettaDaNomi()
-            let standard = Set(iniziali.map { $0.nome.lowercased() })
-            let personalizzati = archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }
-            iniziali.append(contentsOf: personalizzati.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
-            _gruppi = State(initialValue: iniziali)
+        var valori: [String: String] = [:]
+        var personalizzati: [Lavorazione] = []
+        let standard = Self.chiaviStandard
+        let normalizza: (String) -> String = { testo in
+            testo.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+                .replacingOccurrences(of: " ", with: "")
+                .replacingOccurrences(of: "-", with: "")
         }
+
+        if let b = bollettaDaModificare {
+            for lavoro in b.lavorazioni {
+                let n = normalizza(lavoro.nome)
+                if let chiave = standard.first(where: { normalizza($0) == n }) {
+                    valori[chiave] = lavoro.quantita == "0" ? "" : lavoro.quantita
+                } else {
+                    personalizzati.append(lavoro)
+                }
+            }
+        }
+        _quantita = State(initialValue: valori)
+        _nuoviArticoli = State(initialValue: personalizzati)
+    }
+
+    private static var chiaviStandard: [String] {
+        [
+            "CLASSY manici corti", "CLASSY manici corto e tracolla",
+            "BAGPACK L", "BAGPACK M", "BAGPACK S",
+            "TRAINING L", "TRAINING M",
+            "MESSENGER L", "MESSENGER M",
+            "TODAY M", "TODAY S",
+            "BAGPACK PRO", "ACTIVITY",
+            "MONEYFUL L", "MONEYFUL M",
+            "CASE L", "CASE M", "CASE S", "ESSENTIAL"
+        ]
     }
 
     var body: some View {
         NavigationView {
-            Group {
-                if !dataConfermata {
-                    scegliData
-                } else {
-                    mascheraBolletta
+            ScrollView([.vertical, .horizontal], showsIndicators: true) {
+                GeometryReader { geo in
+                    let scale = min(geo.size.width / immagineW, 1.0)
+                    ZStack(alignment: .topLeading) {
+                        Image("bolletta_originale")
+                            .resizable()
+                            .aspectRatio(immagineW / immagineH, contentMode: .fit)
+                            .frame(width: immagineW * scale, height: immagineH * scale)
+
+                        // Copre esclusivamente le scritte a penna della fotografia originale.
+                        copertureScrittura(scale: scale)
+
+                        // Data: premendo qui si apre direttamente il calendario.
+                        Button { mostraCalendario = true } label: {
+                            HStack(spacing: 4) {
+                                Text(data.formatted(.dateTime.day().month(.twoDigits).year()))
+                                    .font(.system(size: 25 * scale, weight: .medium))
+                                    .foregroundColor(.blue)
+                                Image(systemName: "calendar")
+                                    .font(.system(size: 22 * scale))
+                                    .foregroundColor(.blue)
+                            }
+                            .frame(width: 230 * scale, height: 58 * scale)
+                            .contentShape(Rectangle())
+                        }
+                        .position(x: 255 * scale, y: 165 * scale)
+
+                        ForEach(articoli) { articolo in
+                            campiArticolo(articolo, scale: scale)
+                        }
+
+                        nuoviArticoliOverlay(scale: scale)
+                    }
+                    .frame(width: immagineW * scale, height: immagineH * scale)
                 }
+                .frame(minWidth: immagineW, minHeight: immagineH)
             }
-            .navigationTitle(dataConfermata ? "Elenco lavori" : (bollettaDaModificare == nil ? "Nuova bolletta" : "Modifica bolletta"))
+            .navigationTitle(bollettaDaModificare == nil ? "Nuova bolletta" : "Modifica bolletta")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Annulla") { presentationMode.wrappedValue.dismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if dataConfermata {
-                        HStack(spacing: 14) {
-                            if bollettaDaModificare != nil {
-                                Button("CANCELLA") {
-                                    mostraConfermaCancella = true
-                                }
+                    HStack(spacing: 12) {
+                        if bollettaDaModificare != nil {
+                            Button("CANCELLA") { mostraConfermaCancella = true }
                                 .foregroundColor(.red)
-                            }
-                            Button("SALVA") { salva() }
-                                .font(.system(size: 17, weight: .bold))
                         }
+                        Button("SALVA") { salva() }
+                            .font(.headline)
                     }
                 }
             }
         }
-        .alert("Cancella bolletta", isPresented: $mostraConfermaCancella) {
-            Button("Cancella", role: .destructive) {
-                if let bollettaDaModificare {
-                    archivio.eliminaBolletta(id: bollettaDaModificare.id)
+        .sheet(isPresented: $mostraCalendario) {
+            NavigationView {
+                VStack {
+                    DatePicker("Data bolletta", selection: $data, displayedComponents: [.date])
+                        .datePickerStyle(.graphical)
+                        .padding()
+                    Spacer()
                 }
-                presentationMode.wrappedValue.dismiss()
+                .navigationTitle("Scegli data")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("FINE") { mostraCalendario = false }
+                            .font(.headline)
+                    }
+                }
             }
-            Button("Annulla", role: .cancel) { }
-        } message: {
-            Text("Vuoi cancellare definitivamente questa bolletta?")
+            .presentationDetents([.medium])
         }
         .sheet(isPresented: $mostraAggiungiArticolo) {
             NavigationView {
                 Form {
                     Section("NUOVO ARTICOLO") {
-                        TextField("Nome articolo", text: $nuovoArticolo)
-                            .textInputAutocapitalization(.sentences)
+                        TextField("Nome articolo", text: $nuovoNomeArticolo)
                     }
                     Section {
-                        Button("AGGIUNGI") {
-                            aggiungiArticolo()
-                        }
-                        .disabled(nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("AGGIUNGI") { aggiungiArticolo() }
+                            .disabled(nuovoNomeArticolo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
-                .navigationTitle("Aggiungi articolo")
+                .navigationTitle("Nuovo articolo")
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button("Annulla") { mostraAggiungiArticolo = false }
@@ -518,173 +565,117 @@ struct NuovaBollettaView: View {
                 }
             }
         }
-        .onAppear {
-            if gruppi.isEmpty && bollettaDaModificare == nil {
-                gruppi = gruppiBollettaDaNomi()
-                let standard = Set(gruppi.map { $0.nome.lowercased() })
-                gruppi.append(contentsOf: archivio.nomiLavorazioni.filter { !standard.contains($0.lowercased()) }.map { GruppoLavorazione(nome: $0, voci: [VoceLavorazione(nome: "")]) })
+        .alert("Cancella bolletta", isPresented: $mostraConfermaCancella) {
+            Button("Cancella", role: .destructive) {
+                if let b = bollettaDaModificare { archivio.eliminaBolletta(id: b.id) }
+                presentationMode.wrappedValue.dismiss()
             }
+            Button("Annulla", role: .cancel) { }
+        } message: {
+            Text("Vuoi cancellare definitivamente questa bolletta?")
         }
     }
 
-    private var scegliData: some View {
-        VStack(spacing: 16) {
-            DataMeseSelector(data: $data)
-            Button {
-                dataConfermata = true
-                rigaAttiva = 0
-            } label: {
-                Text("CONFERMA DATA").font(.title2.weight(.semibold))
-                    .frame(maxWidth: .infinity).padding()
-            }
-            .buttonStyle(.borderedProminent)
-            Spacer()
+    private func copertureScrittura(scale: CGFloat) -> some View {
+        ZStack {
+            // Nome scritto a mano e data originale.
+            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 190 * scale, height: 44 * scale).position(x: 230 * scale, y: 103 * scale)
+            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 180 * scale, height: 42 * scale).position(x: 255 * scale, y: 164 * scale)
+
+            // Segni e numeri scritti a mano nelle quantità della fotografia.
+            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 58 * scale, height: 42 * scale).position(x: 286 * scale, y: 333 * scale)
+            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 105 * scale, height: 42 * scale).position(x: 870 * scale, y: 333 * scale)
+            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 58 * scale, height: 42 * scale).position(x: 700 * scale, y: 865 * scale)
+            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 95 * scale, height: 42 * scale).position(x: 870 * scale, y: 865 * scale)
+            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 58 * scale, height: 42 * scale).position(x: 286 * scale, y: 1030 * scale)
+            Rectangle().fill(Color.white.opacity(0.96)).frame(width: 95 * scale, height: 42 * scale).position(x: 420 * scale, y: 1030 * scale)
         }
-        .padding(22)
+        .allowsHitTesting(false)
     }
 
-    private var mascheraBolletta: some View {
-        VStack(spacing: 0) {
-            intestazioneFissa
-            Divider()
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(spacing: 10) {
-                        ForEach(gruppi.indices, id: \.self) { g in
-                            gruppoView(g, proxy: proxy)
-                        }
-
-                        Button { mostraAggiungiArticolo = true } label: {
-                            HStack {
-                                Image(systemName: "plus.circle.fill")
-                                Text("AGGIUNGI ARTICOLO")
-                                    .fontWeight(.semibold)
-                            }
-                            .font(.title3)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                    }
-                    .padding(12)
-                }
+    private func campiArticolo(_ articolo: FormArticolo, scale: CGFloat) -> some View {
+        VStack(spacing: 5 * scale) {
+            ForEach(articolo.varianti.indices, id: \.self) { i in
+                let variante = articolo.varianti[i]
+                let key = variante.isEmpty ? articolo.id : "\(articolo.id) \(variante)"
+                campoQuantita(key: key, scale: scale)
             }
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("OK") { prossimaRiga() }
-                    .font(.headline)
-            }
-        }
+        .frame(width: articolo.width * scale, height: articolo.height * scale, alignment: .topTrailing)
+        .position(x: (articolo.x + articolo.width / 2) * scale, y: (articolo.y + articolo.height / 2) * scale)
     }
 
-    private var intestazioneFissa: some View {
-        VStack(spacing: 5) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading) {
-                    Text("NOME").font(.caption)
-                    Text("data").font(.headline)
-                }
-                Spacer()
-                VStack(spacing: 1) {
-                    Text("elenco").font(.headline)
-                    Text("lavori").font(.headline)
-                }
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(Color.black).foregroundColor(.white)
-                Text("bagful")
-                    .font(.system(size: 30, weight: .bold))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-
-            HStack {
-                Text(data.formatted(date: .numeric, time: .omitted))
-                    .font(.title3)
-                    .foregroundColor(.blue)
-                Spacer()
-                Text("QUANTITÀ").font(.headline)
-            }
-        }
-        .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(Color(white: 0.97))
+    private func campoQuantita(key: String, scale: CGFloat) -> some View {
+        TextField("", text: bindingQuantita(key))
+            .keyboardType(.numberPad)
+            .multilineTextAlignment(.center)
+            .font(.system(size: 25 * scale, weight: .bold))
+            .foregroundColor(.red)
+            .frame(width: 125 * scale, height: 43 * scale)
+            .background(Color.white.opacity(0.04))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4 * scale)
+                    .stroke(Color.gray.opacity(0.35), lineWidth: 1)
+            )
     }
 
-    private func gruppoView(_ g: Int, proxy: ScrollViewProxy) -> some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .bottom) {
-                Text(gruppi[g].nome).font(.headline)
-                Spacer()
-                Text("quantità").font(.headline)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-
-            ForEach(gruppi[g].voci.indices, id: \.self) { v in
-                let flat = indicePiatto(g, v)
-                HStack(spacing: 8) {
-                    Text("□").font(.title3).frame(width: 24)
-                    Text(gruppi[g].voci[v].nome)
-                        .font(.title3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    TextField("", text: binding(g: g, v: v))
-                        .font(.system(size: 22))
-                        .foregroundColor(.blue)
-                        .multilineTextAlignment(.center)
+    private func nuoviArticoliOverlay(scale: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 8 * scale) {
+            ForEach($nuoviArticoli) { $articolo in
+                HStack(spacing: 8 * scale) {
+                    TextField("articolo", text: $articolo.nome)
+                        .font(.system(size: 20 * scale))
+                        .textFieldStyle(.roundedBorder)
+                    TextField("pezzi", text: $articolo.quantita)
                         .keyboardType(.numberPad)
-                        .frame(width: 90, height: 44)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .focused($rigaAttiva, equals: flat)
-                        .id(flat)
+                        .multilineTextAlignment(.center)
+                        .font(.system(size: 22 * scale, weight: .bold))
+                        .foregroundColor(.red)
+                        .frame(width: 115 * scale)
+                        .textFieldStyle(.roundedBorder)
                 }
-                .padding(.horizontal, 10).padding(.vertical, 5)
+            }
+            Button {
+                mostraAggiungiArticolo = true
+            } label: {
+                Label("AGGIUNGI ARTICOLO", systemImage: "plus.circle")
+                    .font(.system(size: 17 * scale, weight: .semibold))
             }
         }
-        .background(RoundedRectangle(cornerRadius: 3).stroke(Color.gray.opacity(0.65), lineWidth: 1))
+        .padding(10 * scale)
+        .frame(width: 900 * scale, alignment: .leading)
+        .position(x: 760 * scale, y: 1535 * scale)
     }
 
-    private func binding(g: Int, v: Int) -> Binding<String> {
+    private func bindingQuantita(_ key: String) -> Binding<String> {
         Binding(
-            get: { gruppi[g].voci[v].quantita },
-            set: { gruppi[g].voci[v].quantita = $0 }
+            get: { quantita[key] ?? "" },
+            set: { quantita[key] = $0.filter(\.isNumber) }
         )
     }
 
-    private func indicePiatto(_ g: Int, _ v: Int) -> Int {
-        var n = 0
-        for i in 0..<g { n += gruppi[i].voci.count }
-        return n + v
-    }
-
-    private func prossimaRiga() {
-        if let r = rigaAttiva { rigaAttiva = r + 1 }
-        else { rigaAttiva = 1 }
-    }
-
     private func aggiungiArticolo() {
-        let nome = nuovoArticolo.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nome = nuovoNomeArticolo.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !nome.isEmpty else { return }
-        let esiste = gruppi.contains { $0.nome.caseInsensitiveCompare(nome) == .orderedSame }
-        guard !esiste else {
-            nuovoArticolo = ""
+        guard !nuoviArticoli.contains(where: { $0.nome.caseInsensitiveCompare(nome) == .orderedSame }) else {
+            nuovoNomeArticolo = ""
             mostraAggiungiArticolo = false
             return
         }
+        nuoviArticoli.append(Lavorazione(nome: nome, quantita: ""))
         archivio.aggiungiLavorazione(nome)
-        gruppi.append(GruppoLavorazione(nome: nome, voci: [VoceLavorazione(nome: "")]))
-        nuovoArticolo = ""
+        nuovoNomeArticolo = ""
         mostraAggiungiArticolo = false
     }
 
     private func salva() {
         var lista: [Lavorazione] = []
-        for g in gruppi {
-            for v in g.voci {
-                let nome = v.nome.isEmpty ? g.nome : "\(g.nome) \(v.nome)"
-                lista.append(Lavorazione(nome: nome, quantita: v.quantita.isEmpty ? "0" : v.quantita))
-            }
+        for key in Self.chiaviStandard {
+            lista.append(Lavorazione(nome: key, quantita: quantita[key].flatMap { $0.isEmpty ? nil : $0 } ?? "0"))
         }
+        lista.append(contentsOf: nuoviArticoli.map {
+            Lavorazione(nome: $0.nome, quantita: $0.quantita.isEmpty ? "0" : $0.quantita)
+        })
         archivio.salvaBolletta(Bolletta(id: bollettaDaModificare?.id ?? UUID(), data: data, lavorazioni: lista))
         presentationMode.wrappedValue.dismiss()
     }
