@@ -872,7 +872,7 @@ struct DatiAnalizzatiView: View {
     @ObservedObject var analysisStore: PDFAnalysisStore
     @ObservedObject var fileStore: PDFTransferStore
     @Environment(\.presentationMode) private var presentationMode
-    @State private var mostraRisultatoPezzi = false
+    @State private var mostraConfrontoManuale = false
 
     private var fileNostre: URL? {
         guard !archivio.bollette.isEmpty else { return nil }
@@ -917,10 +917,10 @@ struct DatiAnalizzatiView: View {
                     Button("Chiudi") { presentationMode.wrappedValue.dismiss() }
                 }
             }
-            .sheet(isPresented: $mostraRisultatoPezzi) {
-                RisultatoConfrontoPezziView(
-                    totaleNostre: totalePezziNostre,
-                    totaleAzienda: totalePezziAzienda
+            .sheet(isPresented: $mostraConfrontoManuale) {
+                ConfrontoManualeView(
+                    archivio: archivio,
+                    analysisStore: analysisStore
                 )
             }
         }
